@@ -1,0 +1,19 @@
+# dependencies
+**/node_modules
+
+# builds
+**/dist
+**/.next
+**/out
+
+# env (실제 값 커밋 금지 - .env.example 만 공유)
+.env
+**/.env
+**/.env.local
+
+# postgres bind-mount 데이터
+/data
+
+# logs & misc
+*.log
+.DS_Store

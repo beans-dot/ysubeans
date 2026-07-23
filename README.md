@@ -1,0 +1,138 @@
+# 연성대학교 IR 대시보드 (YSU Institutional Research Archive)
+
+대학알리미 공시 데이터와 자체 데이터를 통합 분석하는 IR(Institutional Research) 대시보드 시스템입니다.
+
+## 아키텍처
+
+```
+IR_dashboard/
+├─ frontend/   Next.js 14 (App Router) + TypeScript + Tailwind + shadcn/ui + Recharts + Zustand
+├─ backend/    NestJS + TypeORM + PostgreSQL
+├─ docker-compose.yml
+└─ .env.example
+```
+
+- 상태 관리: Zustand (`frontend/src/store/useDashboardStore.ts`) — Props Drilling 없이 전역 관리
+- 차트: Recharts 기반 하이브리드 차트 (Auto-Scaling, connectNulls=false, 데이터 라벨/추세선/기준선 토글, PNG Export)
+- DnD: `@hello-pangea/dnd` (관리자 지표 트리 빌더)
+- 파서: `fast-xml-parser`(대학알리미 API), `exceljs`(업로드 검증), `xlsx`(피벗 엑셀 다운로드)
+
+## 데이터베이스 (EAV)
+
+- `ir_metric_category`, `ir_metric_registry`
+- `ir_university_master` — `school_type`(전문대학/4년제), `region_type`(권역: 수도권/비수도권), `region_city`(지역: 17개 광역 시/도)
+- `ir_department` — 대학별 학과(교육편제). `is_active`로 폐과/통폐합 제외. 유니크 `(univ_code, dept_code)`
+- `ir_raw_data` — **복합 인덱스 `(year, univ_code, metric_id)`** + **유니크 `(year, univ_code, dept_code, metric_id)`** (Upsert 기준)
+- `ir_user_preset`(JSONB), `ir_update_log`
+
+## 대시보드 4대 카테고리
+
+`모집` · `학생·취창업` · `교육·교원` · `재정·교육여건`
+
+## 대상 선택 트리 (Multi-depth)
+
+- **연성대학교(기준 대학)**: 타 대학과 동일하게 공시 `ir_department`(대계열 `series_lg` → 학과)로 트리 구성. 루트만 별도 고정.
+- **타 대학(비교 집단)**: 6단계 위계 — `학교종류 → 권역 → 지역(시/도) → 대학명 → 대계열 → 공시 학과명`. 앞 4단계는 `getUniversityCode` 실데이터, 뒤 2단계(대계열/학과)는 학과정보 API(`ALIMI_DEPT_*`) 또는 통계 API 부수 추출로 채워집니다.
+- 프론트엔드 트리는 모든 노드에 체크박스 + **Cascade Select All**(부모 체크 시 하위 전체 연쇄 선택/해제, 부분 선택은 indeterminate)을 지원합니다.
+- **자체 지표 상호 배타**: `selectedTargets`에 타 대학이 1개라도 있으면 Dual-Listbox의 `[자체]`(INTERNAL) 지표는 `disabled` 처리됩니다.
+
+## 로컬 개발
+
+### 1) 사전 준비
+
+```bash
+cp .env.example .env   # 후 DATA_GO_KR_KEY 등 실제 값 입력
+```
+
+### 2) 데이터베이스
+
+`docker compose up -d db` 로 PostgreSQL 만 먼저 띄웁니다.
+호스트에 이미 PostgreSQL(5432)이 있는 경우 충돌을 피하기 위해 컨테이너는 호스트 포트 **5433** 으로 노출됩니다(`DB_HOST_PORT`). 로컬 백엔드(`backend/.env`)의 `DB_PORT` 도 5433 로 맞춰져 있습니다.
+
+### 3) 백엔드
+
+```bash
+cd backend
+npm install
+npm run start:dev     # http://localhost:4000/api
+npm run seed          # 초기 시딩 (4대 카테고리 + 과거 5개년 대학알리미 Upsert)
+```
+
+### 4) 프론트엔드
+
+```bash
+cd frontend
+npm install
+npm run dev           # http://localhost:3000
+```
+
+## Docker (온프레미스 배포)
+
+```bash
+cp .env.example .env  # DATA_GO_KR_KEY 입력
+docker compose build
+docker compose up -d
+# 최초 1회 시딩
+docker compose run --rm backend npm run seed
+```
+
+- `db`: `postgres:15-alpine`, 호스트 `./data/postgres` ↔ 컨테이너 `/var/lib/postgresql/data` 바인딩(영속화)
+- `backend`/`frontend`: 멀티스테이지 빌드, `depends_on`으로 DB 기동 이후 실행
+
+## 주요 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/metrics/tree` | 업무 주제별 지표 트리 (Dual-Listbox) |
+| PUT | `/api/metrics/reorder` | 트리 빌더 순서 저장 |
+| GET | `/api/universities/tree` | 대상 Multi-depth 트리 |
+| POST | `/api/pivot` | 1차 피벗 JSON (행: 대상/지표, 열: 연도) |
+| POST | `/api/upload/excel` | 자체 데이터 업로드 (3단계 검증) |
+| POST | `/api/alimi/batch` | 대학알리미 당해 연도 배치 |
+| GET/POST/DELETE | `/api/presets` | 프리셋 저장/로드 |
+| GET | `/api/update-log/latest` | Ticker 최신 1건 |
+
+## 업로드 엑셀 형식
+
+헤더: `year, univ_code, dept_code, metric_id, metric_value`
+
+- 결측치(빈칸/undefined)는 거부됩니다. 값이 없으면 문자열 `NULL` 또는 숫자 `0`을 입력하세요.
+- 기존 데이터 존재 시 덮어쓰기 확인, 마감(잠금) 연도는 2차 경고 후 진행합니다. 실패 시 전체 롤백됩니다.
+
+## 대학알리미 OpenAPI 연동 (실데이터 파이프라인)
+
+제공기관 루트: `https://apis.data.go.kr/B340014`. 공통 접속/방어 규칙:
+
+- **numOfRows=9999** 강제 — 정부 API의 10건 페이지 제한 함정 방어(초과 시 자동 페이지네이션).
+- **paramsSerializer** — `serviceKey`는 원본 그대로 전달하고 나머지만 인코딩하여 **이중 인코딩(401)** 방지.
+- **XML/JSON 이중 파싱** — `fast-xml-parser` 로 XML 응답을, JSON 응답은 `JSON.parse` 로 처리.
+- **Rate Limit 방어** — operation/연도 순회 시 `setTimeout` 딜레이(`ALIMI_CALL_DELAY_MS`, 기본 800ms).
+- **Upsert(ON CONFLICT)** — `(year, univ_code, dept_code, metric_id)` 기준. 정기 배치 시 타 대학의 정정 공시가 자동 반영됩니다.
+
+### 소스 구성
+
+| 구분 | 서비스 | 매핑 카테고리 | 적재 방식 |
+| --- | --- | --- | --- |
+| 대학 마스터/트리 | `BasicInformationService_2/getUniversityCode` | - | 대학명·학교종류·지역 |
+| 재정 | `FinancesService` (등록금·장학금·교육비·대출 등) | 재정·교육여건 | XML 수치 태그 동적 파싱 |
+| 교육여건 | `EducationConditionService` (기숙사·도서관·교지 등) | 재정·교육여건 | 동일 |
+| 교원·연구 | `EducationResearchService` (전임교원·강의·연구비 등) | 교육·교원 | 동일 |
+| 학생 | `StudentService` (충원율·취업률·중도탈락 등) | 모집 / 학생·취창업 | 동일 |
+| 산학협력 | `IndustryAcademicCooperationService` (계약학과·현장실습 등) | 학생·취창업 | 동일 + 학과명(`indctVal5` 등) → `dept_code` |
+
+- **지표 하드코딩 금지**: 응답 item의 `Object.keys`를 순회해 수치형 태그를 모두 `ir_metric_registry`에 Upsert합니다.
+- **학과 단위**: XML에 학과코드/학과명(또는 산학협력 목록의 학과명 슬롯)이 있으면 `ir_raw_data.dept_code`에 매핑. 없을 때만 `_ALL_`.
+- **Pivot `_ALL_` 폴백**: 순수 대학단위 지표(해당 연·대학·지표에 학과 raw가 전무)에만 학과 선택 시 `_ALL_` 폴백. 학과단위 지표는 정확 매칭만.
+- 통계 그룹은 `ALIMI_STATS_GROUPS`(JSON)로 확장 가능. 시딩은 연성 우선 + `ALIMI_STATS_UNIV_LIMIT`(0=전체, 양수=샘플 한도).
+
+### 학과정보 API (공시 트리 소스)
+
+`BasicInformationService_1` 사용:
+
+| 용도 | Service | Operation | 비고 |
+| --- | --- | --- | --- |
+| 대학별 학과 | `ALIMI_DEPT_SERVICE` | `getUniversityMajorCode` | `svyYr` + `schlId` 필수. `korMjrNm`/`mjrId`, 대계열 `korSrsLclftNm` |
+| 대계열 코드표 | `ALIMI_SERIES_SERVICE` | `getCodeByLargeSeries` | `svyYr` 필요. `cdid`→`cdnm` |
+
+- **[데이터 무결성] 폐과 필터링**: `schlMjrStatNm` / `MajorStatus` 가 폐과·폐지 등이면 DB 활성 적재 및 트리에서 제외.
+- 연성대학교·타 대학 모두 동일하게 `ir_department.series_lg` → 학과로 트리 렌더링.

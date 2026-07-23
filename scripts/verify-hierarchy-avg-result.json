@@ -1,0 +1,273 @@
+{
+  "pass": 259,
+  "fail": 0,
+  "total": 259,
+  "apiOk": true,
+  "timestamp": "2026-07-21T02:55:10.268Z",
+  "failures": [],
+  "samplePasses": [
+    {
+      "ok": true,
+      "title": "schoolType 4년제: 237 univs",
+      "level": "schoolType",
+      "schoolType": "4년제",
+      "count": 237
+    },
+    {
+      "ok": true,
+      "title": "region 4년제/비수도권: parent=150 childUnion=150",
+      "level": "region",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "count": 150
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/경북: 20 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "경북",
+      "count": 20
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/경남: 14 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "경남",
+      "count": 14
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/강원: 14 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "강원",
+      "count": 14
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/충북: 12 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "충북",
+      "count": 12
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/충남: 17 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "충남",
+      "count": 17
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/대전: 12 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "대전",
+      "count": 12
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/대구: 4 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "대구",
+      "count": 4
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/부산: 16 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "부산",
+      "count": 16
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/세종: 3 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "세종",
+      "count": 3
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/광주: 11 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "광주",
+      "count": 11
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/전남: 12 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "전남",
+      "count": 12
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/전북: 10 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "전북",
+      "count": 10
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/울산: 2 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "울산",
+      "count": 2
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/비수도권/제주: 3 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "비수도권",
+      "regionCity": "제주",
+      "count": 3
+    },
+    {
+      "ok": true,
+      "title": "region 4년제/수도권: parent=87 childUnion=87",
+      "level": "region",
+      "schoolType": "4년제",
+      "regionType": "수도권",
+      "count": 87
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/수도권/경기: 38 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "수도권",
+      "regionCity": "경기",
+      "count": 38
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/수도권/서울: 43 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "수도권",
+      "regionCity": "서울",
+      "count": 43
+    },
+    {
+      "ok": true,
+      "title": "city 4년제/수도권/인천: 6 univs",
+      "level": "regionCity",
+      "schoolType": "4년제",
+      "regionType": "수도권",
+      "regionCity": "인천",
+      "count": 6
+    },
+    {
+      "ok": true,
+      "title": "schoolType 전문대학: 144 univs",
+      "level": "schoolType",
+      "schoolType": "전문대학",
+      "count": 144
+    },
+    {
+      "ok": true,
+      "title": "region 전문대학/비수도권: parent=99 childUnion=99",
+      "level": "region",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "count": 99
+    },
+    {
+      "ok": true,
+      "title": "city 전문대학/비수도권/경북: 16 univs",
+      "level": "regionCity",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "regionCity": "경북",
+      "count": 16
+    },
+    {
+      "ok": true,
+      "title": "city 전문대학/비수도권/충북: 5 univs",
+      "level": "regionCity",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "regionCity": "충북",
+      "count": 5
+    },
+    {
+      "ok": true,
+      "title": "city 전문대학/비수도권/강원: 10 univs",
+      "level": "regionCity",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "regionCity": "강원",
+      "count": 10
+    },
+    {
+      "ok": true,
+      "title": "city 전문대학/비수도권/경남: 11 univs",
+      "level": "regionCity",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "regionCity": "경남",
+      "count": 11
+    },
+    {
+      "ok": true,
+      "title": "city 전문대학/비수도권/부산: 10 univs",
+      "level": "regionCity",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "regionCity": "부산",
+      "count": 10
+    },
+    {
+      "ok": true,
+      "title": "city 전문대학/비수도권/대구: 7 univs",
+      "level": "regionCity",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "regionCity": "대구",
+      "count": 7
+    },
+    {
+      "ok": true,
+      "title": "city 전문대학/비수도권/전남: 9 univs",
+      "level": "regionCity",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "regionCity": "전남",
+      "count": 9
+    },
+    {
+      "ok": true,
+      "title": "city 전문대학/비수도권/광주: 6 univs",
+      "level": "regionCity",
+      "schoolType": "전문대학",
+      "regionType": "비수도권",
+      "regionCity": "광주",
+      "count": 6
+    }
+  ]
+}
