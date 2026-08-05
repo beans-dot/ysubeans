@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -11,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { DeleteRawCorrectionDto } from './dto/delete-raw-correction.dto';
 import { UpdateRawValueDto } from './dto/update-raw-value.dto';
 import { RawCorrectionService } from './raw-correction.service';
 
@@ -72,6 +74,14 @@ export class RawCorrectionController {
       page: safePage,
       pageSize: safePageSize,
     });
+  }
+
+  @Delete()
+  removeMany(@Body() dto: DeleteRawCorrectionDto, @Req() req: Request) {
+    return this.rawCorrectionService.removeMany(
+      dto.rawIds,
+      clientIpFromRequest(req),
+    );
   }
 
   @Patch(':rawId')

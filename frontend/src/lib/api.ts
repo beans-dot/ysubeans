@@ -234,3 +234,10 @@ export async function patchRawCorrectionValue(
   );
   return data;
 }
+
+export async function deleteRawCorrection(rawIds: number[]) {
+  const { data } = await api.delete<{ deleted: number }>('/raw-correction', {
+    data: { rawIds },
+  });
+  return data;
+}

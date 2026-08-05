@@ -766,6 +766,7 @@ export class AlimiService {
 
   /**
    * [치명적] MajorStatus / schlMjrStatNm 이 폐과·폐지 등이면 비활성.
+   * '통합'은 유지(동일 mjrId에 주야·통합/폐과 행이 섞여도 활성 우선 병합).
    * 활성만 DB 적재·트리에 사용.
    */
   private isDeptActive(item: Record<string, unknown>): boolean {
@@ -791,11 +792,11 @@ export class AlimiService {
       'closeYn',
     ]);
     if (!status) return true;
+    // '통합'은 제외하지 않음. 폐과·폐지 등만 비활성.
     const closedKeywords = [
       '폐과',
       '폐지',
       '통폐합',
-      '통합',
       '미운영',
       '중지',
       '폐쇄',

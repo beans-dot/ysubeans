@@ -21,7 +21,7 @@ export class IrDepartment {
   @Column({ name: 'dept_name', type: 'varchar', length: 300 })
   deptName: string;
 
-  // 운영 상태: 폐과/통폐합 제외 위한 플래그
+  // 운영 상태: 폐과·폐지 등 제외 위한 플래그('통합'은 활성 유지)
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 }

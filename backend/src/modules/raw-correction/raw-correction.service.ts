@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { IrDataAuditLog, IrRawData } from '../../entities';
 
 export interface RawCorrectionItem {
@@ -148,5 +148,63 @@ export class RawCorrectionService {
       metricValue: nextValue,
       isLocked: row.isLocked,
     };
+  }
+
+  /**
+   * 대학 자체(INTERNAL) 원시 데이터 하드 삭제.
+   * 감사 로그에 newMetricValue='[DELETED]' 로 남긴다.
+   */
+  async removeMany(
+    rawIds: number[],
+    clientIp: string | null,
+  ): Promise<{ deleted: number }> {
+    const uniqueIds = [
+      ...new Set(
+        rawIds.filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    ];
+    if (uniqueIds.length === 0) {
+      throw new NotFoundException('삭제할 자체 데이터를 찾을 수 없습니다.');
+    }
+
+    const rows = await this.rawRepo.find({
+      where: { rawId: In(uniqueIds) },
+      relations: { metric: true },
+    });
+
+    const allowed = rows.filter(
+      (r) => r.metric && r.metric.sourceType === 'INTERNAL',
+    );
+    if (allowed.length === 0) {
+      throw new NotFoundException('삭제할 자체 데이터를 찾을 수 없습니다.');
+    }
+
+    const allowedIds = new Set(allowed.map((r) => r.rawId));
+    const rejected = uniqueIds.filter((id) => !allowedIds.has(id));
+    if (rejected.length > 0) {
+      throw new ForbiddenException(
+        `대학 자체 데이터만 삭제할 수 있습니다. 대상 외 rawId: ${rejected.join(', ')}`,
+      );
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      for (const row of allowed) {
+        await manager.insert(IrDataAuditLog, {
+          year: row.year,
+          univCode: row.univCode,
+          deptCode: row.deptCode,
+          metricId: row.metricId,
+          metricName: row.metric.metricName,
+          oldMetricValue: row.metricValue,
+          newMetricValue: '[DELETED]',
+          clientIp,
+        });
+      }
+      await manager.delete(IrRawData, {
+        rawId: In(allowed.map((r) => r.rawId)),
+      });
+    });
+
+    return { deleted: allowed.length };
   }
 }

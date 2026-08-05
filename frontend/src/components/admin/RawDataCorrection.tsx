@@ -8,11 +8,14 @@ import {
   ModuleRegistry,
   type CellValueChangedEvent,
   type ColDef,
+  type GridApi,
+  type SelectionChangedEvent,
 } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
-import { Search } from 'lucide-react';
+import { Search, Trash2 } from 'lucide-react';
 import {
+  deleteRawCorrection,
   fetchRawCorrectionList,
   fetchRawCorrectionYears,
   patchRawCorrectionValue,
@@ -48,9 +51,12 @@ export function RawDataCorrection() {
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<RawCorrectionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedCount, setSelectedCount] = useState(0);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const savingIds = useRef(new Set<number>());
+  const gridApiRef = useRef<GridApi<RawCorrectionItem> | null>(null);
 
   useEffect(() => {
     fetchRawCorrectionYears()
@@ -90,12 +96,15 @@ export function RawDataCorrection() {
         setRows(data.items);
         setTotal(data.total);
         setPage(nextPage);
+        setSelectedCount(0);
+        gridApiRef.current?.deselectAll();
         setStatusMsg(
           `${data.total.toLocaleString()}건 중 ${data.items.length}건 표시`,
         );
       } catch (err) {
         setRows([]);
         setTotal(0);
+        setSelectedCount(0);
         setError(apiErrorMessage(err, '자체 데이터 조회에 실패했습니다.'));
       } finally {
         setLoading(false);
@@ -164,6 +173,23 @@ export function RawDataCorrection() {
     [],
   );
 
+  const rowSelection = useMemo(
+    () => ({
+      mode: 'multiRow' as const,
+      checkboxes: true,
+      headerCheckbox: true,
+      enableClickSelection: false,
+    }),
+    [],
+  );
+
+  const onSelectionChanged = useCallback(
+    (event: SelectionChangedEvent<RawCorrectionItem>) => {
+      setSelectedCount(event.api.getSelectedRows().length);
+    },
+    [],
+  );
+
   const onCellValueChanged = useCallback(
     async (event: CellValueChangedEvent<RawCorrectionItem>) => {
       const data = event.data;
@@ -202,13 +228,43 @@ export function RawDataCorrection() {
     [],
   );
 
+  const handleDelete = useCallback(async () => {
+    const api = gridApiRef.current;
+    if (!api) return;
+
+    const selected = api.getSelectedRows();
+    if (selected.length === 0) return;
+
+    const ok = window.confirm(
+      `선택한 ${selected.length}건을 DB에서 삭제할까요?\n이 작업은 되돌릴 수 없습니다.`,
+    );
+    if (!ok) return;
+
+    setDeleting(true);
+    setError(null);
+    setStatusMsg(`${selected.length}건 삭제 중…`);
+    try {
+      const result = await deleteRawCorrection(selected.map((r) => r.rawId));
+      setStatusMsg(`${result.deleted}건을 삭제했습니다.`);
+      const remainingOnPage = rows.length - result.deleted;
+      const nextPage =
+        remainingOnPage <= 0 && page > 1 ? page - 1 : page;
+      await load(nextPage);
+    } catch (err) {
+      setError(apiErrorMessage(err, '삭제에 실패했습니다.'));
+      setStatusMsg(null);
+    } finally {
+      setDeleting(false);
+    }
+  }, [load, page, rows.length]);
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-4">
       <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
         <p className="font-semibold">
-          [안내] 대학 자체 데이터만 수정 가능합니다.
+          [안내] 대학 자체 데이터만 수정·삭제 가능합니다.
         </p>
         <p className="mt-1 text-amber-900/90">
           정보공시 API를 통해 연동된 데이터는 원본 데이터의 정확성 유지를 위해
@@ -272,7 +328,7 @@ export function RawDataCorrection() {
                 if (e.key === 'Enter') void load(1);
               }}
             />
-            <Button onClick={() => void load(1)} disabled={loading}>
+            <Button onClick={() => void load(1)} disabled={loading || deleting}>
               <Search className="mr-1 h-4 w-4" />
               조회
             </Button>
@@ -280,21 +336,39 @@ export function RawDataCorrection() {
         </div>
       </div>
 
-      {(statusMsg || error) && (
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {statusMsg && (
             <span className="text-muted-foreground">{statusMsg}</span>
           )}
           {error && <span className="text-destructive">{error}</span>}
+          {selectedCount > 0 && (
+            <span className="font-medium text-foreground">
+              {selectedCount}건 선택됨
+            </span>
+          )}
         </div>
-      )}
+        <Button
+          variant="destructive"
+          disabled={loading || deleting || selectedCount === 0}
+          onClick={() => void handleDelete()}
+        >
+          <Trash2 className="mr-1 h-4 w-4" />
+          {deleting ? '삭제 중…' : '선택 삭제'}
+        </Button>
+      </div>
 
       <div className="ag-theme-quartz h-[560px] w-full overflow-hidden rounded-md border">
         <AgGridReact<RawCorrectionItem>
           rowData={rows}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
+          rowSelection={rowSelection}
           getRowId={(p) => String(p.data.rawId)}
+          onGridReady={(e) => {
+            gridApiRef.current = e.api;
+          }}
+          onSelectionChanged={onSelectionChanged}
           onCellValueChanged={onCellValueChanged}
           singleClickEdit
           stopEditingWhenCellsLoseFocus
@@ -314,14 +388,14 @@ export function RawDataCorrection() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            disabled={loading || page <= 1}
+            disabled={loading || deleting || page <= 1}
             onClick={() => void load(page - 1)}
           >
             이전
           </Button>
           <Button
             variant="outline"
-            disabled={loading || page >= totalPages}
+            disabled={loading || deleting || page >= totalPages}
             onClick={() => void load(page + 1)}
           >
             다음
