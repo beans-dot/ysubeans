@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { AnnualEventsManager } from '@/components/admin/AnnualEventsManager';
+import { InternalOrgManager } from '@/components/admin/InternalOrgManager';
 import { MemberManager } from '@/components/admin/MemberManager';
 import { RawDataCorrection } from '@/components/admin/RawDataCorrection';
 import { TreeBuilder } from '@/components/admin/TreeBuilder';
@@ -48,9 +49,10 @@ export default function AdminPage() {
         </div>
 
         <Tabs defaultValue="members">
-          <TabsList>
+          <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="members">회원관리</TabsTrigger>
             <TabsTrigger value="tree">지표 트리 빌더</TabsTrigger>
+            <TabsTrigger value="org">계열·학과 관리</TabsTrigger>
             <TabsTrigger value="upload">엑셀 업로드</TabsTrigger>
             <TabsTrigger value="correction">자체 데이터 교정</TabsTrigger>
             <TabsTrigger value="annual">연간 변동사항 관리</TabsTrigger>
@@ -60,6 +62,9 @@ export default function AdminPage() {
           </TabsContent>
           <TabsContent value="tree">
             <TreeBuilder />
+          </TabsContent>
+          <TabsContent value="org">
+            <InternalOrgManager />
           </TabsContent>
           <TabsContent value="upload">
             <UploadCenter />

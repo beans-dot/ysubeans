@@ -80,20 +80,23 @@ export function clearAuthCookies() {
   clearTokenCookie();
 }
 
-export function homePathForRole(role: UserRole): string {
-  return role === 'admin' ? '/' : '/dashboard';
+export function homePathForRole(_role?: UserRole): string {
+  return '/';
 }
 
 export function canAccessPath(role: UserRole, pathname: string): boolean {
   if (pathname.startsWith('/admin')) return role === 'admin';
   if (
+    pathname === '/' ||
     pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/competitiveness') ||
+    pathname.startsWith('/monitoring') ||
+    pathname.startsWith('/strategic-plan') ||
     pathname.startsWith('/update-history') ||
     pathname.startsWith('/profile')
   ) {
     return true;
   }
-  if (pathname === '/') return role === 'admin';
   return true;
 }
 

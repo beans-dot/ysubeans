@@ -3,11 +3,8 @@
 import { useEffect, useState } from 'react';
 import { Save, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import {
-  useDashboardStore,
-  type SelectedMetric,
-  type SelectedTarget,
-} from '@/store/useDashboardStore';
+import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
+import type { SelectedMetric, SelectedTarget } from '@/store/useDashboardStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -24,27 +21,29 @@ interface PresetItem {
 
 export function PresetManager() {
   const [presets, setPresets] = useState<PresetItem[]>([]);
-  const presetName = useDashboardStore((s) => s.presetName);
-  const setPresetName = useDashboardStore((s) => s.setPresetName);
-  const serialize = useDashboardStore((s) => s.serialize);
-  const loadPresetState = useDashboardStore((s) => s.loadPresetState);
-  const deletePreset = useDashboardStore((s) => s.deletePreset);
-  const fetchPivot = useDashboardStore((s) => s.fetchPivot);
+  const presetName = useAnalysisStore((s) => s.presetName);
+  const setPresetName = useAnalysisStore((s) => s.setPresetName);
+  const serialize = useAnalysisStore((s) => s.serialize);
+  const loadPresetState = useAnalysisStore((s) => s.loadPresetState);
+  const deletePreset = useAnalysisStore((s) => s.deletePreset);
+  const fetchPivot = useAnalysisStore((s) => s.fetchPivot);
+  const analysisScope = useAnalysisStore((s) => s.analysisScope);
 
   const refresh = () => {
     api
-      .get<PresetItem[]>('/presets')
+      .get<PresetItem[]>('/presets', { params: { scope: analysisScope } })
       .then(({ data }) => setPresets(data))
       .catch(() => setPresets([]));
   };
 
-  useEffect(refresh, []);
+  useEffect(refresh, [analysisScope]);
 
   const handleSave = async () => {
     if (!presetName.trim()) return;
     await api.post('/presets', {
       presetName: presetName.trim(),
       savedFilterJson: serialize(),
+      scope: analysisScope,
     });
     setPresetName('');
     refresh();
@@ -58,6 +57,8 @@ export function PresetManager() {
       selectedMetrics: json.selectedMetrics ?? [],
       years: json.years ?? [],
       chartOptions: json.chartOptions,
+      relativeExpand: (data.savedFilterJson as { relativeExpand?: { allSeries: boolean; allDepts: boolean } })
+        .relativeExpand,
     });
     await fetchPivot();
   };

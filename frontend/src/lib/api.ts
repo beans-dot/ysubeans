@@ -47,10 +47,12 @@ export interface CategoryTreeNode {
   categoryId: number;
   categoryName: string;
   displayOrder: number;
+  sourceType?: 'ALIMI' | 'INTERNAL';
   metrics: MetricNode[];
 }
 
 export type TargetTreeLevel =
+  | 'section'
   | 'root'
   | 'schoolType'
   | 'region'
@@ -67,6 +69,7 @@ export interface TargetTreeNode {
   deptCode?: string;
   isYeonsung?: boolean;
   selectable: boolean;
+  memberDeptCodes?: string[];
   children?: TargetTreeNode[];
 }
 
@@ -240,4 +243,20 @@ export async function deleteRawCorrection(rawIds: number[]) {
     data: { rawIds },
   });
   return data;
+}
+
+export interface InternalDeptNode {
+  deptPk: number;
+  deptCode: string;
+  deptName: string;
+  displayOrder: number;
+  rawCount: number;
+}
+
+export interface InternalSeriesNode {
+  seriesId: number;
+  seriesName: string;
+  displayOrder: number;
+  isUncategorized: boolean;
+  departments: InternalDeptNode[];
 }

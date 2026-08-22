@@ -4,12 +4,12 @@ import { useRef } from 'react';
 import { FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatNumber } from '@/lib/dataFormatters';
-import { useDashboardStore } from '@/store/useDashboardStore';
+import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function PivotDataGrid() {
-  const pivot = useDashboardStore((s) => s.pivot);
+  const pivot = useAnalysisStore((s) => s.pivot);
   const tableRef = useRef<HTMLTableElement>(null);
 
   const hasData = pivot && pivot.rows.length > 0;

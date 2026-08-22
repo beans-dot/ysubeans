@@ -18,6 +18,10 @@ export class IrUserPreset {
   @Column({ name: 'preset_name', type: 'varchar', length: 200 })
   presetName: string;
 
+  /** disclosure = dashboard / internal = competitiveness */
+  @Column({ name: 'scope', type: 'varchar', length: 30, default: 'disclosure' })
+  scope: string;
+
   @Column({ name: 'saved_filter_json', type: 'jsonb' })
   savedFilterJson: Record<string, unknown>;
 

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { IrDepartment, IrUniversityMaster } from '../../entities';
+import { InternalOrgService } from '../internal-org/internal-org.service';
 import {
   isPlaceholderDepartment,
   normalizeSeriesLg,
@@ -15,6 +16,8 @@ export interface TargetTreeNode {
   deptCode?: string;
   isYeonsung?: boolean;
   selectable: boolean;
+  /** 대학 전체 = 전 학과 평균일 때 (competitiveness) */
+  memberDeptCodes?: string[];
   children?: TargetTreeNode[];
 }
 
@@ -30,6 +33,7 @@ export class UniversitiesService {
     private readonly univRepo: Repository<IrUniversityMaster>,
     @InjectRepository(IrDepartment)
     private readonly deptRepo: Repository<IrDepartment>,
+    private readonly internalOrg: InternalOrgService,
   ) {}
 
   async list(): Promise<IrUniversityMaster[]> {
@@ -76,17 +80,10 @@ export class UniversitiesService {
       }));
   }
 
-  // 2-1 연성대학교: 공시 ir_department 기준 (대계열 → 학과)
+  // 2-1 연성대학교 (공시): 대학 단위만 — 계열·학과는 자체경쟁력 트리에서 제공
   private async buildYeonsungTree(): Promise<TargetTreeNode> {
     const univ = await this.univRepo.findOne({
       where: { univCode: this.ysuCode },
-    });
-    const depts = await this.deptRepo.find({
-      where: { univCode: this.ysuCode, isActive: true },
-    });
-    const seriesChildren = this.buildSeriesChildren(this.ysuCode, depts, {
-      isYeonsung: true,
-      idPrefix: 'ys',
     });
 
     return {
@@ -96,40 +93,24 @@ export class UniversitiesService {
       univCode: this.ysuCode,
       isYeonsung: true,
       selectable: true,
-      children: seriesChildren.length > 0 ? seriesChildren : undefined,
     };
   }
 
-  // 2-2 타 대학 6단계: 학교종류 -> 권역 -> 지역 -> 대학명 -> 대계열 -> 학과
+  // 2-2 타 대학 4단계: 학교종류 -> 권역 -> 지역 -> 대학명
+  // (공시 API는 대학 단위 비교만 가능하므로 계열·학과는 노출하지 않음)
   private async buildOthersTree(): Promise<TargetTreeNode> {
     const univs = (await this.univRepo.find()).filter(
       (u) => u.univCode !== this.ysuCode,
     );
-    const depts = await this.deptRepo.find({ where: { isActive: true } });
-    const deptByUniv = new Map<string, IrDepartment[]>();
-    depts.forEach((d) => {
-      if (d.univCode === this.ysuCode) return;
-      if (!deptByUniv.has(d.univCode)) deptByUniv.set(d.univCode, []);
-      deptByUniv.get(d.univCode)!.push(d);
+
+    const buildUnivNode = (u: IrUniversityMaster): TargetTreeNode => ({
+      id: `oth:univ:${u.univCode}`,
+      label: u.univName,
+      level: 'univ',
+      univCode: u.univCode,
+      isYeonsung: false,
+      selectable: true,
     });
-
-    const buildUnivNode = (u: IrUniversityMaster): TargetTreeNode => {
-      const list = deptByUniv.get(u.univCode) ?? [];
-      const seriesChildren = this.buildSeriesChildren(u.univCode, list, {
-        isYeonsung: false,
-        idPrefix: 'oth',
-      });
-
-      return {
-        id: `oth:univ:${u.univCode}`,
-        label: u.univName,
-        level: 'univ',
-        univCode: u.univCode,
-        isYeonsung: false,
-        selectable: true,
-        children: seriesChildren.length > 0 ? seriesChildren : undefined,
-      };
-    };
 
     // 학교종류 -> 권역 -> 지역 -> 대학
     const tree = new Map<
@@ -200,12 +181,80 @@ export class UniversitiesService {
     };
   }
 
-  async getTargetTree(): Promise<TargetTreeNode[]> {
+  async getTargetTree(
+    scope?: 'internal',
+  ): Promise<TargetTreeNode[]> {
+    if (scope === 'internal') {
+      return this.buildCompetitivenessTree();
+    }
     const [yeonsung, others] = await Promise.all([
       this.buildYeonsungTree(),
       this.buildOthersTree(),
     ]);
     return [yeonsung, others];
+  }
+
+  /**
+   * 자체 경쟁력: 타대학 없이
+   * [대학 전체] 연성대학교(전 학과 평균) / [계열/학과별] 계열-학과 트리
+   */
+  private async buildCompetitivenessTree(): Promise<TargetTreeNode[]> {
+    const univ = await this.univRepo.findOne({
+      where: { univCode: this.ysuCode },
+    });
+    const org = await this.internalOrg.getTree();
+    const seriesChildren: TargetTreeNode[] = org
+      .filter((s) => s.departments.length > 0)
+      .map((s) => ({
+        id: `ys:series:${this.ysuCode}:${s.seriesId}`,
+        label: s.seriesName,
+        level: 'series',
+        univCode: this.ysuCode,
+        isYeonsung: true,
+        selectable: true,
+        children: s.departments.map((d) => ({
+          id: `ys:dept:${this.ysuCode}:${d.deptCode}`,
+          label: d.deptName,
+          level: 'dept',
+          univCode: this.ysuCode,
+          deptCode: d.deptCode,
+          isYeonsung: true,
+          selectable: true,
+        })),
+      }));
+    const memberDeptCodes = seriesChildren.flatMap(
+      (s) => s.children?.map((d) => d.deptCode).filter((c): c is string => !!c) ?? [],
+    );
+
+    return [
+      {
+        id: 'section:univ',
+        label: '대학 전체',
+        level: 'section',
+        isYeonsung: true,
+        selectable: false,
+        children: [
+          {
+            id: 'root:yeonsung',
+            label: univ?.univName || '연성대학교',
+            level: 'root',
+            univCode: this.ysuCode,
+            isYeonsung: true,
+            selectable: true,
+            memberDeptCodes,
+          },
+        ],
+      },
+      {
+        id: 'section:series',
+        label: '계열/학과별',
+        level: 'section',
+        univCode: this.ysuCode,
+        isYeonsung: true,
+        selectable: false,
+        children: seriesChildren.length > 0 ? seriesChildren : undefined,
+      },
+    ];
   }
 
   /**
@@ -250,13 +299,46 @@ export class UniversitiesService {
 
     const univNameByCode = new Map(univs.map((u) => [u.univCode, u.univName]));
     const ysu = univs.find((u) => u.univCode === this.ysuCode);
-    const ysuDepts = depts
+    let ysuDepts = depts
       .filter((d) => d.univCode === this.ysuCode)
       .map((d) => ({
         deptCode: d.deptCode,
         deptName: d.deptName,
         seriesLg: d.seriesLg,
       }));
+    try {
+      const internal = await this.internalOrg.listYeonsungDeptsForCodebook();
+      if (internal.length > 0) {
+        ysuDepts = internal;
+      }
+    } catch {
+      // 자체 편제가 아직 없으면 공시 학과로 폴백
+    }
+
+    const internalByCode = new Map(ysuDepts.map((d) => [d.deptCode, d]));
+    const departments = depts.map((d) => {
+      const overlay =
+        d.univCode === this.ysuCode ? internalByCode.get(d.deptCode) : undefined;
+      return {
+        univCode: d.univCode,
+        univName: univNameByCode.get(d.univCode) || d.univCode,
+        deptCode: d.deptCode,
+        deptName: overlay?.deptName ?? d.deptName,
+        seriesLg: overlay ? overlay.seriesLg : d.seriesLg,
+      };
+    });
+    const extraInternal = ysuDepts.filter(
+      (d) => !depts.some((p) => p.univCode === this.ysuCode && p.deptCode === d.deptCode),
+    );
+    for (const d of extraInternal) {
+      departments.push({
+        univCode: this.ysuCode,
+        univName: ysu?.univName || '연성대학교',
+        deptCode: d.deptCode,
+        deptName: d.deptName,
+        seriesLg: d.seriesLg,
+      });
+    }
 
     return {
       generatedAt: new Date().toISOString(),
@@ -273,13 +355,7 @@ export class UniversitiesService {
         regionType: u.regionType,
         regionCity: u.regionCity,
       })),
-      departments: depts.map((d) => ({
-        univCode: d.univCode,
-        univName: univNameByCode.get(d.univCode) || d.univCode,
-        deptCode: d.deptCode,
-        deptName: d.deptName,
-        seriesLg: d.seriesLg,
-      })),
+      departments,
     };
   }
 }

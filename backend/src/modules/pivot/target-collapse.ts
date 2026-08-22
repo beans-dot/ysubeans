@@ -99,7 +99,11 @@ function walk(
       deptsByUniv,
     });
   } else if (isYeonsungRoot(node) && node.univCode) {
-    const depts = collectDepts(node, node.univCode);
+    const fromNode = node.memberDeptCodes ?? [];
+    const depts =
+      fromNode.length > 0
+        ? fromNode.map((d) => ({ univCode: node.univCode as string, deptCode: d }))
+        : collectDepts(node, node.univCode);
     const memberDeptCodes = depts.map((d) => d.deptCode);
     selfId = node.id;
     out.push({
@@ -107,7 +111,7 @@ function walk(
       parentId,
       pathLabel: currentPath,
       depth,
-      kind: 'univ-individual',
+      kind: fromNode.length > 0 ? 'dept' : 'univ-individual',
       isYeonsung: true,
       univCode: node.univCode,
       memberDeptCodes,
@@ -263,8 +267,8 @@ function toDto(node: AggNode): PivotTargetDto {
       isYeonsung: node.isYeonsung,
     };
   }
-  // 연성대 root가 예전 방식으로 dept 그룹으로 들어온 경우에도 대학 1행으로
-  if (node.id === 'root:yeonsung' && node.univCode) {
+  // 공시 대시보드: 연성대 root는 대학 1행. 자체 경쟁력(전 학과 평균)은 유지.
+  if (node.id === 'root:yeonsung' && node.univCode && !node.memberDeptCodes?.length) {
     return {
       univCode: node.univCode,
       isYeonsung: true,
@@ -292,7 +296,12 @@ export function collapsePivotTargets(
 
   if (!integrate) {
     return targets.map((t) => {
-      if (t.groupKey === 'root:yeonsung' && t.univCode) {
+      // 전 학과 평균(자체 경쟁력)은 대학 단위(_ALL_)로 접지 않음
+      if (
+        t.groupKey === 'root:yeonsung' &&
+        t.univCode &&
+        !t.memberDeptCodes?.length
+      ) {
         return { univCode: t.univCode, isYeonsung: true };
       }
       return t;
@@ -340,6 +349,16 @@ export function collapsePivotTargets(
 
   for (const t of targets) {
     if (t.groupKey === 'root:yeonsung') {
+      if (t.memberDeptCodes?.length) {
+        if (result.some((r) => r.groupKey === t.groupKey)) continue;
+        result.push(t);
+        if (t.univCode) {
+          t.memberDeptCodes.forEach((d) =>
+            consumedDepts.add(deptKey(t.univCode!, d)),
+          );
+        }
+        continue;
+      }
       const code = t.univCode;
       if (code && consumedUnivs.has(code)) continue;
       if (code && !consumedUnivs.has(code)) {

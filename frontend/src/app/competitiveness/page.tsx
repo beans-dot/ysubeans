@@ -6,14 +6,14 @@ import { HybridChart } from '@/components/dashboard/HybridChart';
 import { PivotDataGrid } from '@/components/dashboard/PivotDataGrid';
 import { RelativeComparePanel } from '@/components/dashboard/RelativeComparePanel';
 import { AnalysisStoreProvider } from '@/store/AnalysisStoreProvider';
-import { useDashboardStore } from '@/store/useDashboardStore';
+import { useCompetitivenessStore } from '@/store/useDashboardStore';
 
-export default function DashboardPage() {
+export default function CompetitivenessPage() {
   return (
     <AuthGuard>
-      <AnalysisStoreProvider store={useDashboardStore}>
+      <AnalysisStoreProvider store={useCompetitivenessStore}>
         <div className="px-6 py-6">
-          <h1 className="mb-4 text-2xl">대학정보공시 데이터 검색 및 조회</h1>
+          <h1 className="mb-4 text-2xl">학과별 자체 경쟁력 분석 지표</h1>
           <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
             <div>
               <FilterControls />

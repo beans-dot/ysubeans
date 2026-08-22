@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Lock, Search, X } from 'lucide-react';
+import { ChevronRight, Search, X } from 'lucide-react';
 import { api, type CategoryTreeNode } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { useDashboardStore } from '@/store/useDashboardStore';
-import { Badge } from '@/components/ui/badge';
+import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -20,20 +19,23 @@ export function DualListboxModal() {
   const [tree, setTree] = useState<CategoryTreeNode[]>([]);
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loaded, setLoaded] = useState(false);
 
-  const selectedMetrics = useDashboardStore((s) => s.selectedMetrics);
-  const toggleMetric = useDashboardStore((s) => s.toggleMetric);
-  const clearMetrics = useDashboardStore((s) => s.clearMetrics);
-  const hasOther = useDashboardStore((s) => s.hasOtherUniversity)();
+  const selectedMetrics = useAnalysisStore((s) => s.selectedMetrics);
+  const toggleMetric = useAnalysisStore((s) => s.toggleMetric);
+  const clearMetrics = useAnalysisStore((s) => s.clearMetrics);
+  const analysisScope = useAnalysisStore((s) => s.analysisScope);
+  const sourceType = analysisScope === 'internal' ? 'INTERNAL' : 'ALIMI';
 
   useEffect(() => {
-    if (open && tree.length === 0) {
+    if (open && !loaded) {
       api
-        .get<CategoryTreeNode[]>('/metrics/tree')
+        .get<CategoryTreeNode[]>('/metrics/tree', { params: { sourceType } })
         .then(({ data }) => setTree(data))
-        .catch(() => setTree([]));
+        .catch(() => setTree([]))
+        .finally(() => setLoaded(true));
     }
-  }, [open, tree.length]);
+  }, [open, loaded, sourceType]);
 
   useEffect(() => {
     if (!open) setSearchQuery('');
@@ -41,13 +43,12 @@ export function DualListboxModal() {
 
   const filteredTree = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return tree;
     return tree
       .map((cat) => ({
         ...cat,
-        metrics: cat.metrics.filter((m) =>
-          m.metricName.toLowerCase().includes(q),
-        ),
+        metrics: q
+          ? cat.metrics.filter((m) => m.metricName.toLowerCase().includes(q))
+          : cat.metrics,
       }))
       .filter((cat) => cat.metrics.length > 0);
   }, [tree, searchQuery]);
@@ -67,13 +68,6 @@ export function DualListboxModal() {
         <DialogHeader>
           <DialogTitle>지표 선택 (업무 주제별)</DialogTitle>
         </DialogHeader>
-
-        {hasOther && (
-          <div className="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            <Lock className="h-4 w-4" />
-            타 대학이 선택되어 있어 <b>[자체]</b> 지표는 사용할 수 없습니다.
-          </div>
-        )}
 
         <div className="grid grid-cols-2 gap-4">
           {/* 좌: 사용 가능 지표 (카테고리별) */}
@@ -119,52 +113,29 @@ export function DualListboxModal() {
                   </div>
                   <div className="space-y-1">
                     {cat.metrics.map((m) => {
-                      const disabled = hasOther && m.sourceType === 'INTERNAL';
                       const selected = isSelected(m.metricId);
                       return (
-                        <span
+                        <button
                           key={m.metricId}
-                          className="block"
-                          title={
-                            disabled
-                              ? '연성대학교 자체 지표의 경우 타대학과의 비교가 불가합니다.'
-                              : undefined
+                          type="button"
+                          onClick={() =>
+                            toggleMetric({
+                              metricId: m.metricId,
+                              metricName: m.metricName,
+                              sourceType: m.sourceType,
+                              unit: m.metricUnit,
+                            })
                           }
+                          className={cn(
+                            'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent',
+                            selected && 'bg-primary/10',
+                          )}
                         >
-                          <button
-                            type="button"
-                            disabled={disabled}
-                            onClick={() =>
-                              toggleMetric({
-                                metricId: m.metricId,
-                                metricName: m.metricName,
-                                sourceType: m.sourceType,
-                                unit: m.metricUnit,
-                              })
-                            }
-                            className={cn(
-                              'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                              disabled
-                                ? 'cursor-not-allowed opacity-40'
-                                : 'hover:bg-accent',
-                              selected && 'bg-primary/10',
-                            )}
-                          >
-                            <span className="flex items-center gap-2">
-                              {m.metricName}
-                              <Badge
-                                variant={
-                                  m.sourceType === 'ALIMI' ? 'alimi' : 'internal'
-                                }
-                              >
-                                {m.sourceType === 'ALIMI' ? '공시' : '자체'}
-                              </Badge>
-                            </span>
-                            {selected && (
-                              <span className="text-xs text-primary">선택됨</span>
-                            )}
-                          </button>
-                        </span>
+                          <span>{m.metricName}</span>
+                          {selected && (
+                            <span className="text-xs text-primary">선택됨</span>
+                          )}
+                        </button>
                       );
                     })}
                   </div>
@@ -194,14 +165,7 @@ export function DualListboxModal() {
                   key={m.metricId}
                   className="flex items-center justify-between rounded-md bg-secondary px-2 py-1.5 text-sm"
                 >
-                  <span className="flex items-center gap-2">
-                    {m.metricName}
-                    <Badge
-                      variant={m.sourceType === 'ALIMI' ? 'alimi' : 'internal'}
-                    >
-                      {m.sourceType === 'ALIMI' ? '공시' : '자체'}
-                    </Badge>
-                  </span>
+                  <span>{m.metricName}</span>
                   <button
                     type="button"
                     onClick={() =>

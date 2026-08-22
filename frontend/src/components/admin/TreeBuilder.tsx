@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const CATEGORIES_DROPPABLE_ID = 'categories';
 const CATEGORY_DRAG_PREFIX = 'category-';
@@ -118,7 +119,11 @@ function reorderCategoriesInTree(
     : withOrder;
 }
 
-export function TreeBuilder() {
+function TreeBuilderPane({
+  sourceType,
+}: {
+  sourceType: 'ALIMI' | 'INTERNAL';
+}) {
   const [tree, setTree] = useState<CategoryTreeNode[]>([]);
   const [dirty, setDirty] = useState(false);
   const [newCategory, setNewCategory] = useState('');
@@ -132,7 +137,7 @@ export function TreeBuilder() {
 
   const load = () => {
     api
-      .get<CategoryTreeNode[]>('/metrics/tree')
+      .get<CategoryTreeNode[]>('/metrics/tree', { params: { sourceType } })
       .then(({ data }) => {
         setTree(sortTree(data));
         setSelectedIds(new Set());
@@ -145,7 +150,7 @@ export function TreeBuilder() {
     const onChanged = () => load();
     window.addEventListener('ir-metrics-changed', onChanged);
     return () => window.removeEventListener('ir-metrics-changed', onChanged);
-  }, []);
+  }, [sourceType]);
 
   const toggleSelect = (metricId: number) => {
     setSelectedIds((prev) => {
@@ -279,6 +284,7 @@ export function TreeBuilder() {
     await api.post('/metrics/categories', {
       categoryName: newCategory.trim(),
       displayOrder: tree.length + 1,
+      sourceType,
     });
     setNewCategory('');
     load();
@@ -534,17 +540,18 @@ export function TreeBuilder() {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle>지표 트리 빌더</CardTitle>
+        <CardTitle>
+          {sourceType === 'ALIMI' ? '대학정보공시' : '대학자체데이터'}
+        </CardTitle>
         <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
           <Save className="mr-1 h-4 w-4" /> {saving ? '저장 중...' : '작업 저장'}
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          엑셀로 등록된 신규 지표는 최상단 「{UNCATEGORIZED_CATEGORY_NAME}」에
-          모입니다. 분류 왼쪽 손잡이로 분류 순서를 바꾸고, 지표는 드래그하거나
-          체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요. 자체 지표명은
-          업로드한 metric_name으로 표시됩니다.
+          {sourceType === 'ALIMI'
+            ? '대학정보공시(알리미) 지표만 표시됩니다. dashboard 조회 대상이며, 분류 왼쪽 손잡이로 순서를 바꾸고 지표는 드래그하거나 체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요.'
+            : `엑셀로 등록된 신규 자체 지표는 최상단 「${UNCATEGORIZED_CATEGORY_NAME}」에 모입니다. competitiveness 조회 대상이며, 분류 왼쪽 손잡이로 순서를 바꾸고 지표는 드래그하거나 체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요. 자체 지표명은 업로드한 metric_name으로 표시됩니다.`}
         </p>
 
         <div className="flex gap-2">
@@ -639,5 +646,31 @@ export function TreeBuilder() {
         </DragDropContext>
       </CardContent>
     </Card>
+  );
+}
+
+export function TreeBuilder() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold">지표 트리 빌더</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          대학정보공시 데이터는 dashboard에서, 대학자체데이터는 competitiveness에서
+          조회됩니다. 구성은 동일하지만 지표 출처가 분리되어 있습니다.
+        </p>
+      </div>
+      <Tabs defaultValue="ALIMI">
+        <TabsList>
+          <TabsTrigger value="ALIMI">대학정보공시</TabsTrigger>
+          <TabsTrigger value="INTERNAL">대학자체데이터</TabsTrigger>
+        </TabsList>
+        <TabsContent value="ALIMI">
+          <TreeBuilderPane sourceType="ALIMI" />
+        </TabsContent>
+        <TabsContent value="INTERNAL">
+          <TreeBuilderPane sourceType="INTERNAL" />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

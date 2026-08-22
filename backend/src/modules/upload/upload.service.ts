@@ -213,12 +213,16 @@ export class UploadService {
   ): Promise<IrMetricCategory> {
     const catRepo = manager.getRepository(IrMetricCategory);
     let cat = await catRepo.findOne({
-      where: { categoryName: UNCATEGORIZED_CATEGORY_NAME },
+      where: {
+        categoryName: UNCATEGORIZED_CATEGORY_NAME,
+        sourceType: 'INTERNAL',
+      },
     });
     if (!cat) {
       cat = await catRepo.save(
         catRepo.create({
           categoryName: UNCATEGORIZED_CATEGORY_NAME,
+          sourceType: 'INTERNAL',
           displayOrder: -1,
         }),
       );

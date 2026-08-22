@@ -9,6 +9,10 @@ export class IrMetricCategory {
   @Column({ name: 'category_name', type: 'varchar', length: 200 })
   categoryName: string;
 
+  /** ALIMI = 대학정보공시(dashboard) / INTERNAL = 대학자체데이터(competitiveness) */
+  @Column({ name: 'source_type', type: 'varchar', length: 20, default: 'ALIMI' })
+  sourceType: 'ALIMI' | 'INTERNAL';
+
   @Column({ name: 'display_order', type: 'int', default: 0 })
   displayOrder: number;
 

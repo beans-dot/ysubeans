@@ -38,7 +38,7 @@ import {
   type AnnualEvent,
   type AnnualEventCategory,
 } from '@/lib/api';
-import { useDashboardStore } from '@/store/useDashboardStore';
+import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -270,8 +270,8 @@ function ChartTooltipContent({
 }
 
 export function HybridChart() {
-  const pivot = useDashboardStore((s) => s.pivot);
-  const options = useDashboardStore((s) => s.chartOptions);
+  const pivot = useAnalysisStore((s) => s.pivot);
+  const options = useAnalysisStore((s) => s.chartOptions);
   const chartRef = useRef<HTMLDivElement>(null);
 
   const [scaleMode, setScaleMode] = useState<ChartScaleMode>('absolute');

@@ -8,6 +8,7 @@ import {
   IrUniversityMaster,
 } from '../../entities';
 import { UniversitiesService } from '../universities/universities.service';
+import { InternalOrgService } from '../internal-org/internal-org.service';
 import { PivotQueryDto, PivotResult, PivotRow, PivotTargetDto } from './pivot.dto';
 import { collapsePivotTargets } from './target-collapse';
 
@@ -25,6 +26,7 @@ export class PivotService {
     @InjectRepository(IrDepartment)
     private readonly deptRepo: Repository<IrDepartment>,
     private readonly universitiesService: UniversitiesService,
+    private readonly internalOrg: InternalOrgService,
   ) {}
 
   private parseNumeric(value: string): number | null {
@@ -140,6 +142,12 @@ export class PivotService {
     const deptNameMap = new Map(
       depts.map((d) => [`${d.univCode}::${d.deptCode}`, d.deptName]),
     );
+    try {
+      const overlay = await this.internalOrg.getDeptNameMap(this.ysuCode);
+      overlay.forEach((name, key) => deptNameMap.set(key, name));
+    } catch {
+      // 자체 편제 조회 실패 시 공시 학과명 사용
+    }
 
     const rawRows = await this.rawRepo.find({
       where: {

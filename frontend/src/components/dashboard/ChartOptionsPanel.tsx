@@ -2,15 +2,15 @@
 
 import { Settings2 } from 'lucide-react';
 import { useMemo } from 'react';
-import { useDashboardStore } from '@/store/useDashboardStore';
+import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
 export function ChartOptionsPanel() {
-  const options = useDashboardStore((s) => s.chartOptions);
-  const setChartOption = useDashboardStore((s) => s.setChartOption);
-  const pivot = useDashboardStore((s) => s.pivot);
+  const options = useAnalysisStore((s) => s.chartOptions);
+  const setChartOption = useAnalysisStore((s) => s.setChartOption);
+  const pivot = useAnalysisStore((s) => s.pivot);
 
   // 추세선 대상: 대상선택 × 지표선택 조합(현재 조회된 시리즈)
   const trendTargets = useMemo(() => {

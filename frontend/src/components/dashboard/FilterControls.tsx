@@ -1,24 +1,25 @@
 'use client';
 
 import { Search } from 'lucide-react';
-import {
-  MIN_AVAILABLE_YEAR,
-  useDashboardStore,
-} from '@/store/useDashboardStore';
+import { MIN_AVAILABLE_YEAR } from '@/store/useDashboardStore';
+import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartOptionsPanel } from './ChartOptionsPanel';
 import { DualListboxModal } from './DualListboxModal';
 import { PresetManager } from './PresetManager';
+import { RelativeExpandOptions } from './RelativeExpandOptions';
 import { TargetTree } from './TargetTree';
 
 export function FilterControls() {
-  const years = useDashboardStore((s) => s.years);
-  const setYears = useDashboardStore((s) => s.setYears);
-  const fetchPivot = useDashboardStore((s) => s.fetchPivot);
-  const loading = useDashboardStore((s) => s.loading);
-  const selectedTargets = useDashboardStore((s) => s.selectedTargets);
-  const selectedMetrics = useDashboardStore((s) => s.selectedMetrics);
+  const years = useAnalysisStore((s) => s.years);
+  const setYears = useAnalysisStore((s) => s.setYears);
+  const fetchPivot = useAnalysisStore((s) => s.fetchPivot);
+  const loading = useAnalysisStore((s) => s.loading);
+  const selectedTargets = useAnalysisStore((s) => s.selectedTargets);
+  const selectedMetrics = useAnalysisStore((s) => s.selectedMetrics);
+  const analysisScope = useAnalysisStore((s) => s.analysisScope);
+  const relativeExpand = useAnalysisStore((s) => s.relativeExpand);
 
   const currentYear = new Date().getFullYear();
   const yearOptions = Array.from(
@@ -32,12 +33,16 @@ export function FilterControls() {
   };
 
   const blockedByInternalCompare =
+    analysisScope === 'disclosure' &&
     selectedMetrics.some((m) => m.sourceType === 'INTERNAL') &&
     selectedTargets.some((t) => !t.isYeonsung);
+  const expandOn =
+    analysisScope === 'internal' &&
+    (relativeExpand.allSeries || relativeExpand.allDepts);
   const queryDisabled =
     loading ||
-    selectedTargets.length === 0 ||
     selectedMetrics.length === 0 ||
+    (selectedTargets.length === 0 && !expandOn) ||
     blockedByInternalCompare;
   const queryBlockedTitle = blockedByInternalCompare
     ? '연성대학교 자체 지표의 경우 타대학과의 비교가 불가합니다.'
@@ -80,6 +85,7 @@ export function FilterControls() {
         </div>
 
         <ChartOptionsPanel />
+        <RelativeExpandOptions />
         <PresetManager />
 
         {/* disabled 버튼은 pointer-events가 막히므로 래퍼에 title을 둔다 */}

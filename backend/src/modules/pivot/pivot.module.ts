@@ -6,6 +6,7 @@ import {
   IrRawData,
   IrUniversityMaster,
 } from '../../entities';
+import { InternalOrgModule } from '../internal-org/internal-org.module';
 import { UniversitiesModule } from '../universities/universities.module';
 import { PivotController } from './pivot.controller';
 import { PivotService } from './pivot.service';
@@ -19,6 +20,7 @@ import { PivotService } from './pivot.service';
       IrDepartment,
     ]),
     UniversitiesModule,
+    InternalOrgModule,
   ],
   controllers: [PivotController],
   providers: [PivotService],

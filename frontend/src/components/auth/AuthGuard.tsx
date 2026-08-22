@@ -28,7 +28,7 @@ export function AuthGuard({
       return;
     }
     if (adminOnly && user.role !== 'admin') {
-      router.replace('/dashboard');
+      router.replace(homePathForRole(user.role));
       return;
     }
     if (pathname && !canAccessPath(user.role, pathname)) {

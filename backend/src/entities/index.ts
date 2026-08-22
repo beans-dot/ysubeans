@@ -2,6 +2,8 @@ export * from './ir-metric-category.entity';
 export * from './ir-metric-registry.entity';
 export * from './ir-university-master.entity';
 export * from './ir-department.entity';
+export * from './ir-internal-series.entity';
+export * from './ir-internal-department.entity';
 export * from './ir-raw-data.entity';
 export * from './ir-user-preset.entity';
 export * from './ir-update-log.entity';

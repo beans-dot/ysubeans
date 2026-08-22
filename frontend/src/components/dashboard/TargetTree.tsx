@@ -12,7 +12,8 @@ import {
   type AggregatableNode,
 } from '@/lib/targetSelection';
 import { cn } from '@/lib/utils';
-import { useDashboardStore, type SelectedTarget } from '@/store/useDashboardStore';
+import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
+import { type SelectedTarget } from '@/store/useDashboardStore';
 import { Checkbox } from '@/components/ui/checkbox';
 
 /** 스토어 트리와 무관하게 현재 노드에서 바로 그룹 대상 생성 */
@@ -80,8 +81,21 @@ function buildGroupFromNode(
     };
   }
 
-  // 연성대 root → 대학 단위 1개 (평균 라벨/중복 행 방지)
+  // 연성대 root → 자체 경쟁력은 전 학과 평균, 공시는 대학 단위 1개
   if (node.isYeonsung && node.level === 'root' && univCode) {
+    if (node.memberDeptCodes && node.memberDeptCodes.length > 0) {
+      return {
+        target: {
+          key: node.id,
+          label: node.label,
+          isYeonsung: true,
+          mode: 'group',
+          univCode,
+          memberDeptCodes: node.memberDeptCodes,
+        },
+        descendantKeys: [node.id],
+      };
+    }
     return {
       target: {
         key: univCode,
@@ -129,15 +143,16 @@ function TreeNode({
   ancestorIsYeonsung?: boolean;
 }) {
   const [expanded, setExpanded] = useState(depth < 1);
-  const tree = useDashboardStore((s) => s.targetTree);
-  const selectedTargets = useDashboardStore((s) => s.selectedTargets);
-  const toggleHierarchyGroup = useDashboardStore((s) => s.toggleHierarchyGroup);
-  const toggleIndividualTarget = useDashboardStore((s) => s.toggleIndividualTarget);
+  const tree = useAnalysisStore((s) => s.targetTree);
+  const selectedTargets = useAnalysisStore((s) => s.selectedTargets);
+  const toggleHierarchyGroup = useAnalysisStore((s) => s.toggleHierarchyGroup);
+  const toggleIndividualTarget = useAnalysisStore((s) => s.toggleIndividualTarget);
 
   const hasChildren = !!node.children && node.children.length > 0;
   const isDept = node.level === 'dept';
   const isUniv = node.level === 'univ';
   const isYeonsungRoot = !!node.isYeonsung && node.level === 'root';
+  const isSection = node.level === 'section';
 
   const localGroup = useMemo(
     () => buildGroupFromNode(node, pathLabel, ancestorUnivCode, ancestorIsYeonsung),
@@ -225,6 +240,35 @@ function TreeNode({
     localGroup?.target.mode === 'group' ||
     (!!hierarchyNode && hierarchyNode.kind !== 'univ-individual');
 
+  if (isSection) {
+    return (
+      <div className="mb-2">
+        <div
+          className="px-1 py-1.5 text-xs font-bold text-muted-foreground"
+          style={{ paddingLeft: `${depth * 14 + 4}px` }}
+        >
+          {node.label}
+        </div>
+        {node.children?.map((child) => {
+          const nextPath =
+            child.level === 'root' || child.level === 'series'
+              ? child.label
+              : child.label;
+          return (
+            <TreeNode
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              pathLabel={nextPath}
+              ancestorUnivCode={node.univCode ?? ancestorUnivCode}
+              ancestorIsYeonsung={!!node.isYeonsung || !!ancestorIsYeonsung}
+            />
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div
@@ -299,24 +343,51 @@ function TreeNode({
   );
 }
 
+/** 공시 조회용: 연성대 계열·학과 children 제거 (대학 단위만) */
+function stripDisclosureDeptHierarchy(nodes: TargetTreeNode[]): TargetTreeNode[] {
+  return nodes.map((node) => {
+    if (node.children?.length) {
+      const children = stripDisclosureDeptHierarchy(node.children);
+      if (node.isYeonsung && node.level === 'root') {
+        return { ...node, children: undefined };
+      }
+      return { ...node, children };
+    }
+    if (node.isYeonsung && node.level === 'root') {
+      return { ...node, children: undefined };
+    }
+    return node;
+  });
+}
+
 export function TargetTree() {
   const [tree, setTree] = useState<TargetTreeNode[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const setTargetTree = useDashboardStore((s) => s.setTargetTree);
+  const setTargetTree = useAnalysisStore((s) => s.setTargetTree);
+  const analysisScope = useAnalysisStore((s) => s.analysisScope);
 
   useEffect(() => {
+    const path =
+      analysisScope === 'internal'
+        ? '/universities/tree?scope=internal'
+        : '/universities/tree';
     api
-      .get<TargetTreeNode[]>('/universities/tree')
+      .get<TargetTreeNode[]>(path)
       .then(({ data }) => {
-        setTree(data);
-        setTargetTree(data);
+        // 공시(library): 대학 단위만 조회 → 연성대 계열·학과 위계는 노출하지 않음
+        const next =
+          analysisScope === 'disclosure'
+            ? stripDisclosureDeptHierarchy(data)
+            : data;
+        setTree(next);
+        setTargetTree(next);
       })
       .catch(() => {
         setTree([]);
         setTargetTree([]);
       })
       .finally(() => setLoaded(true));
-  }, [setTargetTree]);
+  }, [setTargetTree, analysisScope]);
 
   return (
     <div className="max-h-[420px] overflow-y-auto rounded-md border p-2">

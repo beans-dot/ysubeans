@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import { MetricsService } from './metrics.service';
 
@@ -16,8 +17,8 @@ export class MetricsController {
 
   // 업무 주제별 카테고리 지표 트리 (Dual-Listbox 모달용)
   @Get('tree')
-  getTree() {
-    return this.metricsService.getCategoryTree();
+  getTree(@Query('sourceType') sourceType?: 'ALIMI' | 'INTERNAL') {
+    return this.metricsService.getCategoryTree(sourceType);
   }
 
   /** 업로드용 지표 코드북 (공시/자체 구분) */
@@ -32,7 +33,14 @@ export class MetricsController {
   }
 
   @Post('categories')
-  createCategory(@Body() body: { categoryName: string; displayOrder?: number }) {
+  createCategory(
+    @Body()
+    body: {
+      categoryName: string;
+      displayOrder?: number;
+      sourceType?: 'ALIMI' | 'INTERNAL';
+    },
+  ) {
     return this.metricsService.createCategory(body);
   }
 

@@ -10,9 +10,9 @@ export class PresetsService {
     private readonly presetRepo: Repository<IrUserPreset>,
   ) {}
 
-  async list(userId = 'default'): Promise<IrUserPreset[]> {
+  async list(userId = 'default', scope?: string): Promise<IrUserPreset[]> {
     return this.presetRepo.find({
-      where: { userId },
+      where: { userId, ...(scope ? { scope } : {}) },
       order: { createdAt: 'DESC' },
     });
   }
@@ -27,12 +27,14 @@ export class PresetsService {
     userId?: string;
     presetName: string;
     savedFilterJson: Record<string, unknown>;
+    scope?: string;
   }): Promise<IrUserPreset> {
     return this.presetRepo.save(
       this.presetRepo.create({
         userId: data.userId || 'default',
         presetName: data.presetName,
         savedFilterJson: data.savedFilterJson,
+        scope: data.scope || 'disclosure',
       }),
     );
   }

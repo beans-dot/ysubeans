@@ -12,7 +12,6 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { Ticker } from './Ticker';
 
 const NAV: Array<{ href: string; label: string; roles: UserRole[] }> = [
-  { href: '/dashboard', label: '대시보드', roles: ['admin', 'user'] },
   { href: '/admin', label: '관리자', roles: ['admin'] },
   {
     href: '/update-history',
@@ -39,7 +38,7 @@ export function Header() {
   }
 
   const role = user?.role;
-  const homeHref = role === 'admin' ? '/' : '/dashboard';
+  const homeHref = '/';
   const visibleNav = role
     ? NAV.filter((item) => item.roles.includes(role))
     : [];

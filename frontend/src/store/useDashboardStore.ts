@@ -2,7 +2,19 @@
 
 import { create } from 'zustand';
 import { api, type PivotResult, type TargetTreeNode } from '@/lib/api';
+import {
+  buildRelativeScales,
+  buildRelativeScalesFromPivotRows,
+  collectUnivLevelCodes,
+  shouldShowRelativeCompare,
+  type RelativeMetricGroup,
+} from '@/lib/relativeCompare';
 import { collapseSelectedTargets } from '@/lib/targetSelection';
+import {
+  collectInternalRelativeTargets,
+  collectYeonsungUnivTarget,
+  type RelativeExpandOptions,
+} from '@/lib/internalRelativeTargets';
 
 export interface SelectedTarget {
   key: string; // 개별: univCode 또는 univCode::deptCode / 그룹: 트리 node.id
@@ -34,7 +46,10 @@ export interface ChartOptions {
   trendlineSeries: Record<string, boolean>;
 }
 
-interface DashboardState {
+export type AnalysisScope = 'disclosure' | 'internal';
+
+export interface DashboardState {
+  analysisScope: AnalysisScope;
   targetTree: TargetTreeNode[];
   selectedTargets: SelectedTarget[];
   selectedMetrics: SelectedMetric[];
@@ -43,6 +58,9 @@ interface DashboardState {
   /** 하위 위계가 모두 선택되면 상위 위계 평균으로 접기 */
   hierarchyIntegrate: boolean;
   pivot: PivotResult | null;
+  relativeScales: RelativeMetricGroup[];
+  relativeExpand: RelativeExpandOptions;
+  relativeLoading: boolean;
   loading: boolean;
   presetName: string;
 
@@ -67,6 +85,7 @@ interface DashboardState {
     value: ChartOptions[K],
   ) => void;
   setPresetName: (name: string) => void;
+  setRelativeExpand: (patch: Partial<RelativeExpandOptions>) => void;
 
   fetchPivot: () => Promise<void>;
   loadPresetState: (state: {
@@ -75,6 +94,7 @@ interface DashboardState {
     years: number[];
     chartOptions?: ChartOptions;
     hierarchyIntegrate?: boolean;
+    relativeExpand?: RelativeExpandOptions;
   }) => void;
   serialize: () => Record<string, unknown>;
 }
@@ -121,7 +141,79 @@ function toPivotPayload(targets: SelectedTarget[]) {
   });
 }
 
-export const useDashboardStore = create<DashboardState>((set, get) => ({
+async function fetchInternalRelativeScales(
+  get: () => DashboardState,
+  set: (
+    partial:
+      | Partial<DashboardState>
+      | ((s: DashboardState) => Partial<DashboardState>),
+  ) => void,
+) {
+  const {
+    selectedTargets,
+    selectedMetrics,
+    years,
+    relativeExpand,
+    analysisScope,
+  } = get();
+  if (analysisScope !== 'internal') return;
+
+  const scopedMetrics = selectedMetrics.filter(
+    (m) => m.sourceType === 'INTERNAL',
+  );
+  if (!scopedMetrics.length || !years.length) {
+    set({ relativeScales: [] });
+    return;
+  }
+
+  let { targetTree } = get();
+  if (!targetTree.length) {
+    try {
+      const { data } = await api.get<TargetTreeNode[]>(
+        '/universities/tree?scope=internal',
+      );
+      targetTree = data;
+      set({ targetTree: data });
+    } catch {
+      targetTree = [];
+    }
+  }
+
+  const relTargets = collectInternalRelativeTargets(
+    targetTree,
+    selectedTargets,
+    relativeExpand,
+  );
+  if (relTargets.length === 0) {
+    set({ relativeScales: [] });
+    return;
+  }
+
+  set({ relativeLoading: true });
+  try {
+    const { data: rel } = await api.post<PivotResult>('/pivot', {
+      targets: toPivotPayload(relTargets),
+      metricIds: scopedMetrics.map((m) => m.metricId),
+      years,
+      hierarchyIntegrate: false,
+    });
+    set({
+      relativeScales: buildRelativeScalesFromPivotRows(
+        rel,
+        scopedMetrics.map((m) => m.metricId),
+        ['root:yeonsung'],
+      ),
+    });
+  } catch {
+    set({ relativeScales: [] });
+  } finally {
+    set({ relativeLoading: false });
+  }
+}
+
+export function createAnalysisStore(analysisScope: AnalysisScope) {
+  return create<DashboardState>((set, get) => ({
+  analysisScope,
   targetTree: [],
   selectedTargets: [],
   selectedMetrics: [],
@@ -135,6 +227,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   },
   hierarchyIntegrate: false,
   pivot: null,
+  relativeScales: [],
+  relativeExpand: { allSeries: false, allDepts: false },
+  relativeLoading: false,
   loading: false,
   presetName: '',
 
@@ -202,6 +297,12 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
   toggleMetric: (m) =>
     set((state) => {
+      if (state.analysisScope === 'disclosure' && m.sourceType === 'INTERNAL') {
+        return state;
+      }
+      if (state.analysisScope === 'internal' && m.sourceType === 'ALIMI') {
+        return state;
+      }
       if (m.sourceType === 'INTERNAL' && state.selectedTargets.some((t) => !t.isYeonsung)) {
         return state;
       }
@@ -225,25 +326,55 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     })),
   setPresetName: (name) => set({ presetName: name }),
 
+  setRelativeExpand: (patch) => {
+    set((s) => ({
+      relativeExpand: { ...s.relativeExpand, ...patch },
+    }));
+    const { analysisScope, pivot } = get();
+    if (analysisScope === 'internal' && pivot) {
+      void fetchInternalRelativeScales(get, set);
+    }
+  },
+
   fetchPivot: async () => {
-    const { selectedTargets, selectedMetrics, years, hierarchyIntegrate } = get();
+    const {
+      selectedTargets,
+      selectedMetrics,
+      years,
+      hierarchyIntegrate,
+      analysisScope,
+      relativeExpand,
+    } = get();
+    const scopedMetrics =
+      analysisScope === 'internal'
+        ? selectedMetrics.filter((m) => m.sourceType === 'INTERNAL')
+        : selectedMetrics.filter((m) => m.sourceType === 'ALIMI');
     const hasInternalWithOther =
-      selectedMetrics.some((m) => m.sourceType === 'INTERNAL') &&
+      analysisScope === 'disclosure' &&
+      scopedMetrics.some((m) => m.sourceType === 'INTERNAL') &&
       selectedTargets.some((t) => !t.isYeonsung);
+    const expandOn =
+      analysisScope === 'internal' &&
+      (relativeExpand.allSeries || relativeExpand.allDepts);
     if (
-      selectedTargets.length === 0 ||
-      selectedMetrics.length === 0 ||
+      (selectedTargets.length === 0 && !expandOn) ||
+      scopedMetrics.length === 0 ||
       years.length === 0 ||
       hasInternalWithOther
     ) {
-      set({ pivot: { years, rows: [] } });
+      set({ pivot: { years, rows: [] }, relativeScales: [] });
       return;
     }
+
+    const treePath =
+      analysisScope === 'internal'
+        ? '/universities/tree?scope=internal'
+        : '/universities/tree';
 
     let { targetTree } = get();
     if (!targetTree.length) {
       try {
-        const { data } = await api.get<TargetTreeNode[]>('/universities/tree');
+        const { data } = await api.get<TargetTreeNode[]>(treePath);
         targetTree = data;
         set({ targetTree: data });
       } catch {
@@ -256,16 +387,53 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       targetTree,
       hierarchyIntegrate,
     );
+    const chartTargets =
+      collapsed.length > 0
+        ? collapsed
+        : (() => {
+            const univ = collectYeonsungUnivTarget(targetTree);
+            return univ ? [univ] : [];
+          })();
+    if (chartTargets.length === 0) {
+      set({ pivot: { years, rows: [] }, relativeScales: [] });
+      return;
+    }
 
-    set({ loading: true, selectedTargets: collapsed });
+    set({ loading: true, selectedTargets: collapsed, relativeScales: [] });
     try {
       const { data } = await api.post<PivotResult>('/pivot', {
-        targets: toPivotPayload(collapsed),
-        metricIds: selectedMetrics.map((m) => m.metricId),
+        targets: toPivotPayload(chartTargets),
+        metricIds: scopedMetrics.map((m) => m.metricId),
         years,
         hierarchyIntegrate,
       });
-      set({ pivot: data });
+
+      let relativeScales: RelativeMetricGroup[] = [];
+      if (analysisScope === 'internal') {
+        set({ pivot: data });
+        await fetchInternalRelativeScales(get, set);
+      } else if (shouldShowRelativeCompare(collapsed, scopedMetrics)) {
+        const univCodes = collectUnivLevelCodes(collapsed);
+        const alimiMetricIds = scopedMetrics
+          .filter((m) => m.sourceType === 'ALIMI')
+          .map((m) => m.metricId);
+        if (univCodes.length >= 2 && alimiMetricIds.length > 0) {
+          try {
+            const { data: rel } = await api.post<PivotResult>('/pivot', {
+              targets: univCodes.map((univCode) => ({ univCode })),
+              metricIds: alimiMetricIds,
+              years,
+              hierarchyIntegrate: false,
+            });
+            relativeScales = buildRelativeScales(rel, alimiMetricIds);
+          } catch {
+            relativeScales = [];
+          }
+        }
+        set({ pivot: data, relativeScales });
+      } else {
+        set({ pivot: data, relativeScales: [] });
+      }
     } finally {
       set({ loading: false });
     }
@@ -280,6 +448,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         ? { ...s.chartOptions, ...state.chartOptions }
         : s.chartOptions,
       hierarchyIntegrate: state.hierarchyIntegrate ?? s.hierarchyIntegrate,
+      relativeExpand: state.relativeExpand
+        ? { ...s.relativeExpand, ...state.relativeExpand }
+        : s.relativeExpand,
     })),
 
   serialize: () => {
@@ -289,6 +460,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       years,
       chartOptions,
       hierarchyIntegrate,
+      relativeExpand,
     } = get();
     return {
       selectedTargets,
@@ -296,6 +468,12 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       years,
       chartOptions,
       hierarchyIntegrate,
+      relativeExpand,
     };
   },
 }));
+}
+
+export const useDashboardStore = createAnalysisStore('disclosure');
+export const useCompetitivenessStore = createAnalysisStore('internal');
+export type AnalysisStore = ReturnType<typeof createAnalysisStore>;

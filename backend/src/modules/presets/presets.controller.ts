@@ -15,8 +15,8 @@ export class PresetsController {
   constructor(private readonly presetsService: PresetsService) {}
 
   @Get()
-  list(@Query('userId') userId?: string) {
-    return this.presetsService.list(userId);
+  list(@Query('userId') userId?: string, @Query('scope') scope?: string) {
+    return this.presetsService.list(userId, scope);
   }
 
   @Get(':id')
@@ -31,6 +31,7 @@ export class PresetsController {
       userId?: string;
       presetName: string;
       savedFilterJson: Record<string, unknown>;
+      scope?: string;
     },
   ) {
     return this.presetsService.save(body);

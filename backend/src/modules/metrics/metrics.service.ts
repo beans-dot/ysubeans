@@ -20,6 +20,7 @@ export interface CategoryTreeNode {
   categoryId: number;
   categoryName: string;
   displayOrder: number;
+  sourceType: 'ALIMI' | 'INTERNAL';
   metrics: MetricNode[];
 }
 
@@ -32,17 +33,22 @@ export class MetricsService {
     private readonly metricRepo: Repository<IrMetricRegistry>,
   ) {}
 
+  private domainReady = false;
+
   /**
-   * 엑셀 업로드 대기용 「분류없음」 카테고리를 보장하고 최상단(displayOrder=-1)으로 유지.
+   * 엑셀 업로드 대기용 「분류없음」 카테고리를 출처별로 보장하고 최상단(displayOrder=-1)으로 유지.
    */
-  async ensureUncategorizedCategory(): Promise<IrMetricCategory> {
+  async ensureUncategorizedCategory(
+    sourceType: 'ALIMI' | 'INTERNAL' = 'ALIMI',
+  ): Promise<IrMetricCategory> {
     let cat = await this.categoryRepo.findOne({
-      where: { categoryName: UNCATEGORIZED_CATEGORY_NAME },
+      where: { categoryName: UNCATEGORIZED_CATEGORY_NAME, sourceType },
     });
     if (!cat) {
       cat = await this.categoryRepo.save(
         this.categoryRepo.create({
           categoryName: UNCATEGORIZED_CATEGORY_NAME,
+          sourceType,
           displayOrder: -1,
         }),
       );
@@ -54,16 +60,71 @@ export class MetricsService {
   }
 
   /**
-   * 업무 주제별 카테고리 기준 지표 트리 반환 (출처 분리 아님).
+   * 기존 카테고리/지표를 대학정보공시(ALIMI) · 대학자체데이터(INTERNAL) 위계로 분리.
+   */
+  private async ensureMetricDomains(): Promise<void> {
+    if (this.domainReady) {
+      await this.ensureUncategorizedCategory('ALIMI');
+      await this.ensureUncategorizedCategory('INTERNAL');
+      return;
+    }
+
+    const categories = await this.categoryRepo.find();
+    const metrics = await this.metricRepo.find();
+
+    for (const cat of categories) {
+      const sourceType = cat.sourceType === 'INTERNAL' ? 'INTERNAL' : 'ALIMI';
+      if (cat.sourceType !== sourceType) {
+        cat.sourceType = sourceType;
+        await this.categoryRepo.save(cat);
+      }
+    }
+
+    await this.ensureUncategorizedCategory('ALIMI');
+    await this.ensureUncategorizedCategory('INTERNAL');
+
+    for (const metric of metrics) {
+      if (metric.sourceType !== 'INTERNAL') continue;
+      const current = categories.find((c) => c.categoryId === metric.categoryId);
+      if (current?.sourceType === 'INTERNAL') continue;
+
+      const name = current?.categoryName ?? UNCATEGORIZED_CATEGORY_NAME;
+      let dest = await this.categoryRepo.findOne({
+        where: { categoryName: name, sourceType: 'INTERNAL' },
+      });
+      if (!dest) {
+        dest = await this.categoryRepo.save(
+          this.categoryRepo.create({
+            categoryName: name,
+            sourceType: 'INTERNAL',
+            displayOrder: current?.displayOrder ?? 0,
+          }),
+        );
+      }
+      await this.metricRepo.update(metric.metricId, {
+        categoryId: dest.categoryId,
+      });
+    }
+
+    this.domainReady = true;
+  }
+
+  /**
+   * 업무 주제별 카테고리 기준 지표 트리.
+   * sourceType이 있으면 해당 출처(공시/자체)만 반환.
    * 「분류없음」은 항상 최상단에 노출.
    */
-  async getCategoryTree(): Promise<CategoryTreeNode[]> {
-    await this.ensureUncategorizedCategory();
+  async getCategoryTree(
+    sourceType?: 'ALIMI' | 'INTERNAL',
+  ): Promise<CategoryTreeNode[]> {
+    await this.ensureMetricDomains();
 
     const categories = await this.categoryRepo.find({
+      where: sourceType ? { sourceType } : undefined,
       order: { displayOrder: 'ASC', categoryId: 'ASC' },
     });
     const metrics = await this.metricRepo.find({
+      where: sourceType ? { sourceType } : undefined,
       order: { displayOrder: 'ASC', metricId: 'ASC' },
     });
 
@@ -71,6 +132,7 @@ export class MetricsService {
       categoryId: cat.categoryId,
       categoryName: cat.categoryName,
       displayOrder: cat.displayOrder,
+      sourceType: cat.sourceType,
       metrics: metrics
         .filter((m) => m.categoryId === cat.categoryId)
         .map((m) => ({
@@ -92,7 +154,7 @@ export class MetricsService {
   }
 
   async listCategories(): Promise<IrMetricCategory[]> {
-    await this.ensureUncategorizedCategory();
+    await this.ensureMetricDomains();
     return this.categoryRepo.find({
       order: { displayOrder: 'ASC' },
     });
@@ -113,7 +175,7 @@ export class MetricsService {
       metricUnit: string | null;
     }>;
   }> {
-    await this.ensureUncategorizedCategory();
+    await this.ensureMetricDomains();
 
     const metrics = await this.metricRepo.find({
       relations: ['category'],
@@ -143,7 +205,10 @@ export class MetricsService {
         `「${UNCATEGORIZED_CATEGORY_NAME}」은 시스템 카테고리입니다.`,
       );
     }
-    return this.categoryRepo.save(this.categoryRepo.create(data));
+    const sourceType = data.sourceType === 'INTERNAL' ? 'INTERNAL' : 'ALIMI';
+    return this.categoryRepo.save(
+      this.categoryRepo.create({ ...data, sourceType }),
+    );
   }
 
   async updateCategory(
@@ -192,7 +257,9 @@ export class MetricsService {
       );
     }
 
-    const uncategorized = await this.ensureUncategorizedCategory();
+    const uncategorized = await this.ensureUncategorizedCategory(
+      cat.sourceType === 'INTERNAL' ? 'INTERNAL' : 'ALIMI',
+    );
     await this.metricRepo.update(
       { categoryId },
       { categoryId: uncategorized.categoryId },
@@ -220,7 +287,7 @@ export class MetricsService {
       });
     }
     // 「분류없음」은 항상 최상단 유지
-    await this.ensureUncategorizedCategory();
+    await this.ensureMetricDomains();
     return { ok: true };
   }
 }

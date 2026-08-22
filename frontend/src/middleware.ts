@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { parseSessionCookie, SESSION_COOKIE } from '@/lib/auth';
+import { homePathForRole, parseSessionCookie, SESSION_COOKIE } from '@/lib/auth';
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -21,19 +21,13 @@ export function middleware(request: NextRequest) {
 
   if (session && isPublic) {
     const url = request.nextUrl.clone();
-    url.pathname = session.role === 'admin' ? '/' : '/dashboard';
+    url.pathname = homePathForRole(session.role);
     return NextResponse.redirect(url);
   }
 
   if (session && pathname.startsWith('/admin') && session.role !== 'admin') {
     const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
-  }
-
-  if (session && pathname === '/' && session.role === 'user') {
-    const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
+    url.pathname = homePathForRole(session.role);
     return NextResponse.redirect(url);
   }
 

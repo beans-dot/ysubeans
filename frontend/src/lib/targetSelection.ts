@@ -132,7 +132,11 @@ function walkAggregatable(
       descendantKeys: collectDescendantKeys(node, univCode),
     });
   } else if (isYeonsungRootNode(node) && node.univCode) {
-    const depts = collectDepts(node, node.univCode);
+    const fromNode = node.memberDeptCodes ?? [];
+    const depts =
+      fromNode.length > 0
+        ? fromNode.map((d) => ({ univCode: node.univCode as string, deptCode: d }))
+        : collectDepts(node, node.univCode);
     const memberDeptCodes = depts.map((d) => d.deptCode);
     selfId = node.id;
     out.push({
@@ -141,17 +145,23 @@ function walkAggregatable(
       label: node.label,
       pathLabel: currentPath,
       depth,
-      kind: 'univ-individual',
+      kind: fromNode.length > 0 ? 'dept' : 'univ-individual',
       isYeonsung: true,
       univCode: node.univCode,
       memberDeptCodes,
       univCodes: [node.univCode],
       deptsByUniv: new Map([[node.univCode, memberDeptCodes]]),
-      leafKeys: [
-        node.univCode,
-        ...memberDeptCodes.map((d) => deptKey(node.univCode!, d)),
-      ],
-      descendantKeys: collectDescendantKeys(node, node.univCode),
+      leafKeys:
+        fromNode.length > 0
+          ? memberDeptCodes.map((d) => deptKey(node.univCode!, d))
+          : [
+              node.univCode,
+              ...memberDeptCodes.map((d) => deptKey(node.univCode!, d)),
+            ],
+      descendantKeys:
+        fromNode.length > 0
+          ? [node.id]
+          : collectDescendantKeys(node, node.univCode),
     });
   } else if (isDeptGroupNode(node) && univCode) {
     const depts = collectDepts(node, univCode);
@@ -363,6 +373,10 @@ function normalizeYeonsungRoot(selected: SelectedTarget[]): SelectedTarget[] {
     if (s.key !== 'root:yeonsung' && !(s.mode === 'group' && s.key === 'root:yeonsung')) {
       return s;
     }
+    // 자체 경쟁력: 대학 = 전 학과 평균 → 그룹 유지
+    if (s.mode === 'group' && s.memberDeptCodes?.length) {
+      return s;
+    }
     const code = s.univCode;
     if (!code) return s;
     return {
@@ -442,6 +456,16 @@ export function collapseSelectedTargets(
 
   for (const s of selected) {
     if (s.key === 'root:yeonsung' || (s.mode === 'group' && s.key === 'root:yeonsung')) {
+      if (s.mode === 'group' && s.memberDeptCodes?.length) {
+        if (result.some((r) => r.key === s.key)) continue;
+        result.push(s);
+        if (s.univCode) {
+          s.memberDeptCodes.forEach((d) =>
+            consumedDepts.add(deptKey(s.univCode!, d)),
+          );
+        }
+        continue;
+      }
       const code = s.univCode;
       if (code && !consumedUnivs.has(code)) {
         result.push({
