@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, Search, X } from 'lucide-react';
-import { api, type CategoryTreeNode } from '@/lib/api';
+import {
+  api,
+  excludeHiddenFromTree,
+  type CategoryTreeNode,
+  type MetricNode,
+} from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
@@ -19,23 +24,38 @@ export function DualListboxModal() {
   const [tree, setTree] = useState<CategoryTreeNode[]>([]);
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loaded, setLoaded] = useState(false);
 
   const selectedMetrics = useAnalysisStore((s) => s.selectedMetrics);
   const toggleMetric = useAnalysisStore((s) => s.toggleMetric);
   const clearMetrics = useAnalysisStore((s) => s.clearMetrics);
+  const syncMetricCatalog = useAnalysisStore((s) => s.syncMetricCatalog);
   const analysisScope = useAnalysisStore((s) => s.analysisScope);
   const sourceType = analysisScope === 'internal' ? 'INTERNAL' : 'ALIMI';
 
   useEffect(() => {
-    if (open && !loaded) {
-      api
-        .get<CategoryTreeNode[]>('/metrics/tree', { params: { sourceType } })
-        .then(({ data }) => setTree(data))
-        .catch(() => setTree([]))
-        .finally(() => setLoaded(true));
-    }
-  }, [open, loaded, sourceType]);
+    if (!open) return;
+    api
+      .get<CategoryTreeNode[]>('/metrics/tree', { params: { sourceType } })
+      .then(({ data }) => {
+        const visible = excludeHiddenFromTree(data);
+        setTree(visible);
+        // 트리 빌더에서 숨김·삭제·이름 변경된 지표를 선택 목록에서도 정리
+        const flatten = (metrics: MetricNode[]): MetricNode[] =>
+          (metrics ?? []).flatMap((m) => [m, ...flatten(m.children ?? [])]);
+        syncMetricCatalog(
+          sourceType,
+          visible.flatMap((cat) =>
+            flatten(cat.metrics).map((m) => ({
+              metricId: m.metricId,
+              metricName: m.metricName,
+              sourceType: m.sourceType,
+              unit: m.metricUnit,
+            })),
+          ),
+        );
+      })
+      .catch(() => setTree([]));
+  }, [open, sourceType, syncMetricCatalog]);
 
   useEffect(() => {
     if (!open) setSearchQuery('');

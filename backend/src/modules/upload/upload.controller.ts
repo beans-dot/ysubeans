@@ -19,6 +19,7 @@ export class UploadController {
     @UploadedFile() file: Express.Multer.File,
     @Query('confirmOverwrite') confirmOverwrite?: string,
     @Query('confirmLocked') confirmLocked?: string,
+    @Query('sourceType') sourceType?: string,
   ) {
     if (!file) {
       throw new BadRequestException('업로드된 파일이 없습니다.');
@@ -26,6 +27,7 @@ export class UploadController {
     return this.uploadService.processUpload(file.buffer, {
       confirmOverwrite: confirmOverwrite === 'true',
       confirmLocked: confirmLocked === 'true',
+      sourceType: sourceType === 'MONITORING' ? 'MONITORING' : 'INTERNAL',
     });
   }
 }

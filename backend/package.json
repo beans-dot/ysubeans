@@ -11,6 +11,7 @@
     "seed": "ts-node -r tsconfig-paths/register src/seed/seed.ts",
     "seed:resume": "ts-node -r tsconfig-paths/register src/seed/seed-resume.ts",
     "seed:completeness": "ts-node -r tsconfig-paths/register src/seed/seed-completeness.ts",
+    "seed:strategic-plan": "ts-node -r tsconfig-paths/register src/seed/seed-strategic-plan.ts",
     "typeorm": "typeorm-ts-node-commonjs"
   },
   "dependencies": {

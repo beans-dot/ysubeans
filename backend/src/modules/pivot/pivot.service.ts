@@ -112,10 +112,17 @@ export class PivotService {
       return { years: [...years].sort((a, b) => a - b), rows: [] };
     }
 
-    const metrics = await this.metricRepo.find({
-      where: { metricId: In(metricIds) },
-    });
+    const metrics = (
+      await this.metricRepo.find({
+        where: { metricId: In(metricIds) },
+        relations: ['category'],
+      })
+    ).filter((m) => !m.isHidden && !m.category?.isHidden);
+    if (metrics.length === 0) {
+      return { years: [...years].sort((a, b) => a - b), rows: [] };
+    }
     const metricMap = new Map(metrics.map((m) => [m.metricId, m]));
+    const visibleMetricIds = metrics.map((m) => m.metricId);
 
     const univs = await this.univRepo.find({
       where: { univCode: In(univCodes) },
@@ -153,7 +160,7 @@ export class PivotService {
       where: {
         year: In(years),
         univCode: In(univCodes),
-        metricId: In(metricIds),
+        metricId: In(visibleMetricIds),
       },
     });
 

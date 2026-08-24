@@ -7,6 +7,7 @@ import {
   IrMetricRegistry,
   IrRawData,
   IrUpdateLog,
+  type MetricSourceType,
 } from '../../entities';
 import { UNCATEGORIZED_CATEGORY_NAME } from '../metrics/metric.constants';
 import {
@@ -18,15 +19,17 @@ import {
 export interface UploadOptions {
   confirmOverwrite?: boolean;
   confirmLocked?: boolean;
+  sourceType?: Extract<MetricSourceType, 'INTERNAL' | 'MONITORING'>;
 }
 
-/** 양식에서 인식하는 헤더. 그 외 열(메모·비고 등)은 무시한다. */
+/** 양식에서 인식하는 헤더. univ_name·dept_name 등 표시용 더미 열은 무시한다. */
 const KNOWN_HEADERS = [
   'year',
   'univ_code',
   'dept_code',
   'metric_name',
   'metric_value',
+  'metric_id',
 ] as const;
 
 type KnownHeader = (typeof KNOWN_HEADERS)[number];
@@ -38,6 +41,7 @@ interface ParsedRowInput {
   deptCode: string;
   metricName: string;
   metricValue: string;
+  metricIdHint?: number;
 }
 
 interface ParsedRow extends ParsedRowInput {
@@ -138,7 +142,7 @@ export class UploadService {
     const headerIndex: Partial<Record<KnownHeader, number>> = {};
     headerRow.eachCell((cell, colNumber) => {
       const key = this.cellToString(cell.value).toLowerCase();
-      // 양식 헤더만 인식. 메모·비고 등 기타 열은 무시.
+      // 양식 헤더만 인식. univ_name·dept_name·메모 등 기타 열은 무시.
       if ((KNOWN_HEADERS as readonly string[]).includes(key)) {
         headerIndex[key as KnownHeader] = colNumber;
       }
@@ -192,6 +196,22 @@ export class UploadService {
         throw new BadRequestException(`[${i}행] year는 정수여야 합니다.`);
       }
 
+      let metricIdHint: number | undefined;
+      if (headerIndex['metric_id']) {
+        const rawId = this.cellToString(
+          row.getCell(headerIndex['metric_id']).value,
+        );
+        if (rawId) {
+          const parsed = Number.parseInt(rawId, 10);
+          if (!Number.isInteger(parsed)) {
+            throw new BadRequestException(
+              `[${i}행] metric_id는 정수여야 합니다.`,
+            );
+          }
+          metricIdHint = parsed;
+        }
+      }
+
       rows.push({
         rowNumber: i,
         year,
@@ -199,6 +219,7 @@ export class UploadService {
         deptCode,
         metricName,
         metricValue,
+        metricIdHint,
       });
     }
 
@@ -210,19 +231,20 @@ export class UploadService {
 
   private async ensureUncategorizedCategory(
     manager: EntityManager,
+    sourceType: Extract<MetricSourceType, 'INTERNAL' | 'MONITORING'>,
   ): Promise<IrMetricCategory> {
     const catRepo = manager.getRepository(IrMetricCategory);
     let cat = await catRepo.findOne({
       where: {
         categoryName: UNCATEGORIZED_CATEGORY_NAME,
-        sourceType: 'INTERNAL',
+        sourceType,
       },
     });
     if (!cat) {
       cat = await catRepo.save(
         catRepo.create({
           categoryName: UNCATEGORIZED_CATEGORY_NAME,
-          sourceType: 'INTERNAL',
+          sourceType,
           displayOrder: -1,
         }),
       );
@@ -235,17 +257,21 @@ export class UploadService {
 
   /**
    * metric_name → metric_id 해석.
-   * 기존 지표(공시·자체)는 이름 후보((학과별) 등)로 매칭하고,
-   * 없으면 INTERNAL 지표를 신규 생성(DB가 metric_id 자동 할당).
+   * INTERNAL 업로드는 공시·자체만 매칭하고, MONITORING 업로드는 모니터링 지표만 매칭한다.
    */
   private async resolveMetricIds(
     manager: EntityManager,
     inputs: ParsedRowInput[],
     uncategorizedId: number,
+    sourceType: Extract<MetricSourceType, 'INTERNAL' | 'MONITORING'>,
   ): Promise<{ rows: ParsedRow[]; metricsCreated: number }> {
     const metricRepo = manager.getRepository(IrMetricRegistry);
 
-    const uniqueNames = Array.from(new Set(inputs.map((r) => r.metricName)));
+    const uniqueNames = Array.from(
+      new Set(
+        inputs.filter((r) => r.metricIdHint == null).map((r) => r.metricName),
+      ),
+    );
     const deptLevelNames = new Set(
       inputs
         .filter((r) => r.deptCode !== '_ALL_')
@@ -262,16 +288,47 @@ export class UploadService {
           })
         : [];
 
+    const hintedIds = Array.from(
+      new Set(
+        inputs
+          .map((r) => r.metricIdHint)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    );
+    const hinted =
+      hintedIds.length > 0
+        ? await metricRepo.find({ where: { metricId: In(hintedIds) } })
+        : [];
+    const hintMap = new Map(hinted.map((m) => [m.metricId, m]));
+
     const findMatch = (inputName: string): IrMetricRegistry | undefined => {
       const candidates = metricNameLookupCandidates(inputName);
       const matches = existing.filter((m) =>
         candidates.includes(m.metricName),
       );
       if (matches.length === 0) return undefined;
+
+      if (sourceType === 'MONITORING') {
+        const monitoring = matches.filter((m) => m.sourceType === 'MONITORING');
+        const exact = monitoring.filter((m) => m.metricName === inputName);
+        const pool = exact.length > 0 ? exact : monitoring;
+        if (pool.length > 1) {
+          throw new BadRequestException(
+            `지표명 '${inputName}'이(가) 대학주요모니터링에 여러 개 있습니다. metric_id 열로 지정해 주세요.`,
+          );
+        }
+        return pool[0];
+      }
+
       return (
-        matches.find((m) => m.metricName === inputName) ??
+        matches.find(
+          (m) => m.metricName === inputName && m.sourceType === 'INTERNAL',
+        ) ??
+        matches.find(
+          (m) => m.metricName === inputName && m.sourceType === 'ALIMI',
+        ) ??
         matches.find((m) => m.sourceType === 'INTERNAL') ??
-        matches[0]
+        matches.find((m) => m.sourceType === 'ALIMI')
       );
     };
 
@@ -289,7 +346,7 @@ export class UploadService {
       const created = await metricRepo.save(
         metricRepo.create({
           categoryId: uncategorizedId,
-          sourceType: 'INTERNAL',
+          sourceType,
           metricName: isDeptLevel ? withDeptLevelMetricSuffix(name) : name,
           metricUnit: null,
           aggregationType: 'SUM',
@@ -301,10 +358,34 @@ export class UploadService {
       metricsCreated++;
     }
 
-    const rows: ParsedRow[] = inputs.map((r) => ({
-      ...r,
-      metricId: nameToId.get(r.metricName)!,
-    }));
+    const rows: ParsedRow[] = inputs.map((r) => {
+      if (r.metricIdHint != null) {
+        const hintedMetric = hintMap.get(r.metricIdHint);
+        if (!hintedMetric) {
+          throw new BadRequestException(
+            `[${r.rowNumber}행] metric_id ${r.metricIdHint}를 찾을 수 없습니다.`,
+          );
+        }
+        if (
+          sourceType === 'MONITORING' &&
+          hintedMetric.sourceType !== 'MONITORING'
+        ) {
+          throw new BadRequestException(
+            `[${r.rowNumber}행] metric_id ${r.metricIdHint}는 모니터링 지표가 아닙니다.`,
+          );
+        }
+        if (
+          sourceType === 'INTERNAL' &&
+          hintedMetric.sourceType === 'MONITORING'
+        ) {
+          throw new BadRequestException(
+            `[${r.rowNumber}행] metric_id ${r.metricIdHint}는 모니터링 전용입니다. 모니터링 데이터 업로드를 이용하세요.`,
+          );
+        }
+        return { ...r, metricId: hintedMetric.metricId };
+      }
+      return { ...r, metricId: nameToId.get(r.metricName)! };
+    });
 
     return { rows, metricsCreated };
   }
@@ -322,11 +403,17 @@ export class UploadService {
       .transaction(async (manager) => {
         const rawRepo = manager.getRepository(IrRawData);
 
-        const uncategorized = await this.ensureUncategorizedCategory(manager);
+        const sourceType =
+          options.sourceType === 'MONITORING' ? 'MONITORING' : 'INTERNAL';
+        const uncategorized = await this.ensureUncategorizedCategory(
+          manager,
+          sourceType,
+        );
         const { rows, metricsCreated } = await this.resolveMetricIds(
           manager,
           inputs,
           uncategorized.categoryId,
+          sourceType,
         );
 
         const existing = await rawRepo

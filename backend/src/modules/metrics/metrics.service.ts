@@ -4,23 +4,45 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { IrMetricCategory, IrMetricRegistry } from '../../entities';
+import { IsNull, Not, Repository } from 'typeorm';
+import {
+  IrMetricCategory,
+  IrMetricRegistry,
+  IrRawData,
+  type MetricSourceType,
+} from '../../entities';
 import { UNCATEGORIZED_CATEGORY_NAME } from './metric.constants';
+import {
+  hasDeptLevelMetricSuffix,
+  stripDeptLevelMetricSuffix,
+  withDeptLevelMetricSuffix,
+} from './metric-labels';
+import { coerceMetricSourceType, sourceTypeLabel } from './metric-source';
+import {
+  MONITORING_SEED_CATALOG,
+  type MonitoringSeedCategory,
+  type MonitoringSeedMetric,
+} from './monitoring.catalog';
 
 export interface MetricNode {
   metricId: number;
+  metricCode: string | null;
   metricName: string;
   metricUnit: string | null;
-  sourceType: 'ALIMI' | 'INTERNAL';
+  sourceType: MetricSourceType;
   displayOrder: number;
+  parentMetricId: number | null;
+  isHidden: boolean;
+  children: MetricNode[];
 }
 
 export interface CategoryTreeNode {
   categoryId: number;
+  categoryCode: string | null;
   categoryName: string;
   displayOrder: number;
-  sourceType: 'ALIMI' | 'INTERNAL';
+  sourceType: MetricSourceType;
+  isHidden: boolean;
   metrics: MetricNode[];
 }
 
@@ -39,7 +61,7 @@ export class MetricsService {
    * 엑셀 업로드 대기용 「분류없음」 카테고리를 출처별로 보장하고 최상단(displayOrder=-1)으로 유지.
    */
   async ensureUncategorizedCategory(
-    sourceType: 'ALIMI' | 'INTERNAL' = 'ALIMI',
+    sourceType: MetricSourceType = 'ALIMI',
   ): Promise<IrMetricCategory> {
     let cat = await this.categoryRepo.findOne({
       where: { categoryName: UNCATEGORIZED_CATEGORY_NAME, sourceType },
@@ -60,12 +82,14 @@ export class MetricsService {
   }
 
   /**
-   * 기존 카테고리/지표를 대학정보공시(ALIMI) · 대학자체데이터(INTERNAL) 위계로 분리.
+   * 기존 카테고리/지표를 공시(ALIMI) · 자체(INTERNAL) · 모니터링(MONITORING) 위계로 분리.
    */
   private async ensureMetricDomains(): Promise<void> {
     if (this.domainReady) {
       await this.ensureUncategorizedCategory('ALIMI');
       await this.ensureUncategorizedCategory('INTERNAL');
+      await this.ensureUncategorizedCategory('MONITORING');
+      await this.ensureMonitoringCatalog();
       return;
     }
 
@@ -73,7 +97,7 @@ export class MetricsService {
     const metrics = await this.metricRepo.find();
 
     for (const cat of categories) {
-      const sourceType = cat.sourceType === 'INTERNAL' ? 'INTERNAL' : 'ALIMI';
+      const sourceType = coerceMetricSourceType(cat.sourceType);
       if (cat.sourceType !== sourceType) {
         cat.sourceType = sourceType;
         await this.categoryRepo.save(cat);
@@ -82,6 +106,7 @@ export class MetricsService {
 
     await this.ensureUncategorizedCategory('ALIMI');
     await this.ensureUncategorizedCategory('INTERNAL');
+    await this.ensureUncategorizedCategory('MONITORING');
 
     for (const metric of metrics) {
       if (metric.sourceType !== 'INTERNAL') continue;
@@ -106,16 +131,307 @@ export class MetricsService {
       });
     }
 
+    await this.ensureMonitoringCatalog();
     this.domainReady = true;
+  }
+
+  /** 해당 지표에 연결된 원본 데이터 건수 */
+  private async rawDataCount(metricId: number): Promise<number> {
+    return this.metricRepo.manager.count(IrRawData, { where: { metricId } });
+  }
+
+  /** 모니터링 지표에 실제 값이 있는 연도 (내림차순) */
+  async listMonitoringYears(): Promise<number[]> {
+    const rows = await this.metricRepo.manager
+      .createQueryBuilder(IrRawData, 'r')
+      .innerJoin('r.metric', 'm')
+      .select('r.year', 'year')
+      .distinct(true)
+      .where('m.sourceType = :sourceType', { sourceType: 'MONITORING' })
+      .orderBy('r.year', 'DESC')
+      .getRawMany<{ year: string | number }>();
+
+    return rows
+      .map((row) => Number(row.year))
+      .filter((y) => Number.isFinite(y));
+  }
+
+  /**
+   * metric_code 도입 전에 심어진 시드 지표 찾기.
+   * 업로드 동기화로 (학과별) 접미사가 붙은 이름도 같은 지표로 본다.
+   */
+  private async findLegacyMonitoringSeedMetrics(
+    categoryId: number,
+    parentMetricId: number | null,
+    spec: MonitoringSeedMetric,
+  ): Promise<IrMetricRegistry[]> {
+    const siblings = await this.metricRepo.find({
+      where:
+        parentMetricId == null
+          ? {
+              categoryId,
+              sourceType: 'MONITORING',
+              parentMetricId: IsNull(),
+            }
+          : { categoryId, sourceType: 'MONITORING', parentMetricId },
+    });
+    const base = stripDeptLevelMetricSuffix(spec.name);
+    return siblings.filter(
+      (m) => !m.metricCode && stripDeptLevelMetricSuffix(m.metricName) === base,
+    );
+  }
+
+  /**
+   * 이름으로 시드를 찾던 시절 중복 생성된 빈 지표 정리.
+   * 하위 지표와 원본 데이터가 모두 없는 행만 지운다.
+   */
+  private async pruneEmptyMonitoringDuplicates(
+    duplicates: IrMetricRegistry[],
+    keepMetricId: number,
+  ): Promise<void> {
+    for (const dup of duplicates) {
+      if (dup.metricId === keepMetricId) continue;
+      const children = await this.metricRepo.count({
+        where: { parentMetricId: dup.metricId },
+      });
+      if (children > 0) continue;
+      if ((await this.rawDataCount(dup.metricId)) > 0) continue;
+      await this.metricRepo.delete(dup.metricId);
+    }
+  }
+
+  private async ensureMonitoringMetric(
+    categoryId: number,
+    parentMetricId: number | null,
+    spec: MonitoringSeedMetric,
+    displayOrder: number,
+    /** false면 없는 시드 지표를 다시 만들지 않는다(지표 DB 빌더에서 삭제한 상태 유지). */
+    allowCreate: boolean,
+  ): Promise<void> {
+    // 코드로 먼저 찾으므로 지표명을 바꿔도 중복 생성되지 않는다.
+    let metric = await this.metricRepo.findOne({
+      where: { metricCode: spec.code, sourceType: 'MONITORING' },
+    });
+
+    if (!metric) {
+      const legacy = await this.findLegacyMonitoringSeedMetrics(
+        categoryId,
+        parentMetricId,
+        spec,
+      );
+      // 원본 데이터가 있는 행을 원본으로 본다 ((학과별) 이름으로 바뀐 시드 지표)
+      let picked: IrMetricRegistry | undefined;
+      for (const candidate of legacy) {
+        if ((await this.rawDataCount(candidate.metricId)) > 0) {
+          picked = candidate;
+          break;
+        }
+      }
+      picked = picked ?? legacy[0];
+
+      if (picked) {
+        picked.metricCode = spec.code;
+        metric = await this.metricRepo.save(picked);
+        await this.pruneEmptyMonitoringDuplicates(legacy, metric.metricId);
+      }
+    }
+
+    if (!metric) {
+      // 이미 모니터링 지표가 있는 DB에서는 삭제를 존중해 시드를 재생성하지 않는다.
+      if (!allowCreate) return;
+      metric = await this.metricRepo.save(
+        this.metricRepo.create({
+          categoryId,
+          metricCode: spec.code,
+          sourceType: 'MONITORING',
+          metricName: spec.name,
+          metricUnit: spec.unit,
+          aggregationType: 'SUM',
+          displayOrder,
+          parentMetricId,
+        }),
+      );
+    } else if (metric.metricUnit == null && spec.unit != null) {
+      // 이름·순서·소속은 지표 DB 빌더에서 관리하므로 시드가 덮어쓰지 않는다.
+      await this.metricRepo.update(metric.metricId, { metricUnit: spec.unit });
+    }
+
+    for (let i = 0; i < (spec.children ?? []).length; i++) {
+      await this.ensureMonitoringMetric(
+        metric.categoryId,
+        metric.metricId,
+        spec.children![i],
+        i,
+        allowCreate,
+      );
+    }
+  }
+
+  private async ensureMonitoringCategory(
+    spec: MonitoringSeedCategory,
+  ): Promise<IrMetricCategory> {
+    let cat = await this.categoryRepo.findOne({
+      where: { categoryCode: spec.code, sourceType: 'MONITORING' },
+    });
+
+    if (!cat) {
+      // 코드 도입 전에 만들어진 시드 카테고리 백필
+      const legacy = await this.categoryRepo.findOne({
+        where: { categoryName: spec.categoryName, sourceType: 'MONITORING' },
+      });
+      if (legacy && !legacy.categoryCode) {
+        legacy.categoryCode = spec.code;
+        cat = await this.categoryRepo.save(legacy);
+      }
+    }
+
+    if (!cat) {
+      cat = await this.categoryRepo.save(
+        this.categoryRepo.create({
+          categoryCode: spec.code,
+          categoryName: spec.categoryName,
+          sourceType: 'MONITORING',
+          displayOrder: spec.displayOrder,
+        }),
+      );
+    }
+    return cat;
+  }
+
+  /**
+   * 대학주요모니터링 분류·하위지표 보장.
+   * - 모니터링 지표가 하나도 없을 때만 시드로 생성(최초 부트스트랩).
+   * - 그 외에는 코드 백필·단위 보정만 하고, 지표 DB 빌더에서 지운 지표는 다시 만들지 않는다.
+   */
+  private async ensureMonitoringCatalog(): Promise<void> {
+    const existingCount = await this.metricRepo.count({
+      where: { sourceType: 'MONITORING' },
+    });
+    const allowCreate = existingCount === 0;
+
+    for (const spec of MONITORING_SEED_CATALOG) {
+      const cat = await this.ensureMonitoringCategory(spec);
+
+      if (spec.code === 'foundation') {
+        await this.remountMonitoringForeignStudent(cat.categoryId);
+      }
+
+      for (let i = 0; i < spec.metrics.length; i++) {
+        await this.ensureMonitoringMetric(
+          cat.categoryId,
+          null,
+          spec.metrics[i],
+          i,
+          allowCreate,
+        );
+      }
+    }
+  }
+
+  /**
+   * 외국인 유학생 수는 재학생 수 구성 항목이 아니라 별도 지표다.
+   * 이전에 재학생 수 하위로 심어진 '외국인 재학생 수'를 루트로 옮기고 이름을 맞춘다.
+   * 코드가 부여된 뒤(=이름 변경 가능 상태)에는 이름을 건드리지 않는다.
+   */
+  private async remountMonitoringForeignStudent(
+    foundationCategoryId: number,
+  ): Promise<void> {
+    const coded = await this.metricRepo.findOne({
+      where: { metricCode: 'foreign-student-count', sourceType: 'MONITORING' },
+    });
+    if (coded) return;
+
+    const found = await this.metricRepo.find({
+      where: [
+        { sourceType: 'MONITORING', metricName: '외국인 재학생 수' },
+        { sourceType: 'MONITORING', metricName: '외국인 유학생 수' },
+      ],
+    });
+    if (found.length === 0) return;
+
+    const keep =
+      found.find((m) => m.metricName === '외국인 유학생 수') ?? found[0];
+
+    await this.metricRepo.update(keep.metricId, {
+      categoryId: foundationCategoryId,
+      parentMetricId: null,
+      metricName: '외국인 유학생 수',
+      metricUnit: keep.metricUnit ?? '명',
+      displayOrder: 1,
+    });
+
+    for (const extra of found) {
+      if (extra.metricId === keep.metricId) continue;
+      await this.metricRepo.update(extra.metricId, {
+        categoryId: foundationCategoryId,
+        parentMetricId: keep.metricId,
+      });
+    }
+  }
+
+  private toMetricNode(m: IrMetricRegistry): MetricNode {
+    return {
+      metricId: m.metricId,
+      metricCode: m.metricCode ?? null,
+      metricName: m.metricName,
+      metricUnit: m.metricUnit,
+      sourceType: m.sourceType,
+      displayOrder: m.displayOrder,
+      parentMetricId: m.parentMetricId ?? null,
+      isHidden: !!m.isHidden,
+      children: [],
+    };
+  }
+
+  private filterHiddenMetrics(nodes: MetricNode[]): MetricNode[] {
+    return nodes
+      .filter((n) => !n.isHidden)
+      .map((n) => ({
+        ...n,
+        children: this.filterHiddenMetrics(n.children),
+      }));
+  }
+
+  private nestMetrics(metrics: IrMetricRegistry[]): MetricNode[] {
+    const nodes = new Map<number, MetricNode>();
+    for (const m of metrics) {
+      nodes.set(m.metricId, this.toMetricNode(m));
+    }
+    const roots: MetricNode[] = [];
+    const sorted = [...metrics].sort(
+      (a, b) =>
+        a.displayOrder - b.displayOrder || a.metricId - b.metricId,
+    );
+    for (const m of sorted) {
+      const node = nodes.get(m.metricId)!;
+      const parentId = m.parentMetricId ?? null;
+      const parent = parentId != null ? nodes.get(parentId) : undefined;
+      if (parent && parent.metricId !== node.metricId) {
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    const sortRec = (list: MetricNode[]) => {
+      list.sort(
+        (a, b) =>
+          a.displayOrder - b.displayOrder || a.metricId - b.metricId,
+      );
+      list.forEach((n) => sortRec(n.children));
+    };
+    sortRec(roots);
+    return roots;
   }
 
   /**
    * 업무 주제별 카테고리 기준 지표 트리.
-   * sourceType이 있으면 해당 출처(공시/자체)만 반환.
+   * sourceType이 있으면 해당 출처만 반환.
    * 「분류없음」은 항상 최상단에 노출.
+   * includeHidden=false(기본)이면 숨김 카테고리·지표는 제외한다.
    */
   async getCategoryTree(
-    sourceType?: 'ALIMI' | 'INTERNAL',
+    sourceType?: MetricSourceType,
+    includeHidden = false,
   ): Promise<CategoryTreeNode[]> {
     await this.ensureMetricDomains();
 
@@ -128,28 +444,32 @@ export class MetricsService {
       order: { displayOrder: 'ASC', metricId: 'ASC' },
     });
 
-    const nodes = categories.map((cat) => ({
+    let nodes: CategoryTreeNode[] = categories.map((cat) => ({
       categoryId: cat.categoryId,
+      categoryCode: cat.categoryCode ?? null,
       categoryName: cat.categoryName,
       displayOrder: cat.displayOrder,
       sourceType: cat.sourceType,
-      metrics: metrics
-        .filter((m) => m.categoryId === cat.categoryId)
-        .map((m) => ({
-          metricId: m.metricId,
-          metricName: m.metricName,
-          metricUnit: m.metricUnit,
-          sourceType: m.sourceType,
-          displayOrder: m.displayOrder,
-        })),
+      isHidden: !!cat.isHidden,
+      metrics: this.nestMetrics(
+        metrics.filter((m) => m.categoryId === cat.categoryId),
+      ),
     }));
+
+    if (!includeHidden) {
+      nodes = nodes
+        .filter((c) => !c.isHidden)
+        .map((c) => ({
+          ...c,
+          metrics: this.filterHiddenMetrics(c.metrics),
+        }))
+        .filter((c) => c.metrics.length > 0);
+    }
 
     return nodes.sort((a, b) => {
       if (a.categoryName === UNCATEGORIZED_CATEGORY_NAME) return -1;
       if (b.categoryName === UNCATEGORIZED_CATEGORY_NAME) return 1;
-      return (
-        a.displayOrder - b.displayOrder || a.categoryId - b.categoryId
-      );
+      return a.displayOrder - b.displayOrder || a.categoryId - b.categoryId;
     });
   }
 
@@ -161,23 +481,26 @@ export class MetricsService {
   }
 
   /**
-   * 업로드용 지표 코드북 (공시 ALIMI / 자체 INTERNAL 구분).
-   * 관리자가 metric_name을 코드북에서 그대로 복사해 오타·띄어쓰기 중복을 줄인다.
+   * 업로드용 지표 코드북 (공시 / 자체 / 모니터링 구분).
+   * includeHidden=false(기본)이면 숨김 카테고리·지표는 양식·코드북에서 제외한다.
    */
-  async getCodebook(): Promise<{
+  async getCodebook(includeHidden = false): Promise<{
     generatedAt: string;
     metrics: Array<{
       metricId: number;
+      metricCode: string | null;
       metricName: string;
-      sourceType: 'ALIMI' | 'INTERNAL';
-      sourceLabel: '공시' | '자체';
+      sourceType: MetricSourceType;
+      sourceLabel: string;
       categoryName: string;
       metricUnit: string | null;
+      parentMetricId: number | null;
+      parentMetricName: string | null;
     }>;
   }> {
     await this.ensureMetricDomains();
 
-    const metrics = await this.metricRepo.find({
+    const all = await this.metricRepo.find({
       relations: ['category'],
       order: {
         sourceType: 'ASC',
@@ -185,17 +508,28 @@ export class MetricsService {
         metricId: 'ASC',
       },
     });
+    const byId = new Map(all.map((m) => [m.metricId, m]));
+    const metrics = includeHidden
+      ? all
+      : all.filter((m) => !m.isHidden && !m.category?.isHidden);
 
     return {
       generatedAt: new Date().toISOString(),
-      metrics: metrics.map((m) => ({
-        metricId: m.metricId,
-        metricName: m.metricName,
-        sourceType: m.sourceType,
-        sourceLabel: m.sourceType === 'ALIMI' ? '공시' : '자체',
-        categoryName: m.category?.categoryName ?? '',
-        metricUnit: m.metricUnit,
-      })),
+      metrics: metrics.map((m) => {
+        const parent =
+          m.parentMetricId != null ? byId.get(m.parentMetricId) : undefined;
+        return {
+          metricId: m.metricId,
+          metricCode: m.metricCode ?? null,
+          metricName: m.metricName,
+          sourceType: m.sourceType,
+          sourceLabel: sourceTypeLabel(m.sourceType),
+          categoryName: m.category?.categoryName ?? '',
+          metricUnit: m.metricUnit,
+          parentMetricId: m.parentMetricId ?? null,
+          parentMetricName: parent?.metricName ?? null,
+        };
+      }),
     };
   }
 
@@ -205,7 +539,7 @@ export class MetricsService {
         `「${UNCATEGORIZED_CATEGORY_NAME}」은 시스템 카테고리입니다.`,
       );
     }
-    const sourceType = data.sourceType === 'INTERNAL' ? 'INTERNAL' : 'ALIMI';
+    const sourceType = coerceMetricSourceType(data.sourceType);
     return this.categoryRepo.save(
       this.categoryRepo.create({ ...data, sourceType }),
     );
@@ -239,12 +573,213 @@ export class MetricsService {
     return this.categoryRepo.save(cat);
   }
 
-  async createMetric(data: Partial<IrMetricRegistry>): Promise<IrMetricRegistry> {
-    return this.metricRepo.save(this.metricRepo.create(data));
+  async createMetric(data: {
+    categoryId: number;
+    sourceType?: MetricSourceType;
+    metricName: string;
+    metricUnit?: string | null;
+    aggregationType?: string;
+    displayOrder?: number;
+    parentMetricId?: number | null;
+  }): Promise<IrMetricRegistry> {
+    const name = data.metricName?.trim();
+    if (!name) {
+      throw new BadRequestException('지표 이름을 입력해 주세요.');
+    }
+
+    const cat = await this.categoryRepo.findOne({
+      where: { categoryId: data.categoryId },
+    });
+    if (!cat) {
+      throw new NotFoundException('카테고리를 찾을 수 없습니다.');
+    }
+
+    const sourceType = coerceMetricSourceType(data.sourceType ?? cat.sourceType);
+    if (cat.sourceType !== sourceType) {
+      throw new BadRequestException(
+        '지표 출처가 카테고리 출처와 일치하지 않습니다.',
+      );
+    }
+
+    let parentMetricId: number | null = data.parentMetricId ?? null;
+    if (parentMetricId != null) {
+      const parent = await this.metricRepo.findOne({
+        where: { metricId: parentMetricId },
+      });
+      if (!parent) {
+        throw new NotFoundException('상위 지표를 찾을 수 없습니다.');
+      }
+      if (parent.categoryId !== cat.categoryId) {
+        throw new BadRequestException(
+          '상위 지표는 같은 카테고리에 있어야 합니다.',
+        );
+      }
+      if (parent.sourceType !== sourceType) {
+        throw new BadRequestException(
+          '상위 지표의 출처가 일치하지 않습니다.',
+        );
+      }
+    }
+
+    const siblingWhere =
+      parentMetricId == null
+        ? { categoryId: cat.categoryId, parentMetricId: IsNull() }
+        : { categoryId: cat.categoryId, parentMetricId };
+    const siblings = await this.metricRepo.find({
+      where: siblingWhere,
+      order: { displayOrder: 'DESC' },
+      take: 1,
+    });
+    const displayOrder =
+      data.displayOrder ?? (siblings[0] ? siblings[0].displayOrder + 1 : 0);
+
+    return this.metricRepo.save(
+      this.metricRepo.create({
+        categoryId: cat.categoryId,
+        sourceType,
+        metricName: name,
+        metricUnit: data.metricUnit ?? null,
+        aggregationType: data.aggregationType ?? 'SUM',
+        displayOrder,
+        parentMetricId,
+      }),
+    );
   }
 
   /**
-   * 카테고리 삭제. 소속 지표는 「분류없음」으로 이동. 「분류없음」 자체는 삭제 불가.
+   * 지표명 변경. metric_id·metric_code는 유지되므로 원본 데이터, 프리셋,
+   * 모니터링 KPI 매칭이 그대로 유지된다.
+   * 대학정보공시(ALIMI)는 알리미 배치가 지표명으로 값을 다시 물기 때문에 수정 불가.
+   */
+  async updateMetric(
+    metricId: number,
+    data: { metricName: string },
+  ): Promise<IrMetricRegistry> {
+    const metric = await this.metricRepo.findOne({ where: { metricId } });
+    if (!metric) {
+      throw new NotFoundException('지표를 찾을 수 없습니다.');
+    }
+    if (metric.sourceType === 'ALIMI') {
+      throw new BadRequestException(
+        '대학정보공시 지표명은 변경할 수 없습니다. 자체 데이터·모니터링 지표만 수정할 수 있습니다.',
+      );
+    }
+
+    const input = data.metricName?.trim();
+    if (!input) {
+      throw new BadRequestException('지표명을 입력해 주세요.');
+    }
+    if (input.length > 300) {
+      throw new BadRequestException('지표명은 300자 이내로 입력해 주세요.');
+    }
+
+    // 학과단위 데이터가 있는 지표는 (학과별) 접미사를 유지해야 업로드 동기화와 어긋나지 않는다.
+    const name = hasDeptLevelMetricSuffix(metric.metricName)
+      ? withDeptLevelMetricSuffix(input)
+      : input;
+
+    if (name === metric.metricName) return metric;
+    await this.assertMetricNameAvailable(metric, name);
+
+    metric.metricName = name;
+    return this.metricRepo.save(metric);
+  }
+
+  /**
+   * 이름 충돌 검사.
+   * 자체 데이터는 업로드가 지표명으로 값을 찾으므로 출처 전체에서 유일해야 한다.
+   * 모니터링은 회계 수입/지출처럼 같은 이름이 여러 상위 아래 존재하므로
+   * 같은 상위(형제) 안에서만 중복을 막는다. 업로드는 metric_id로 구분한다.
+   */
+  private async assertMetricNameAvailable(
+    metric: IrMetricRegistry,
+    name: string,
+  ): Promise<void> {
+    if (metric.sourceType === 'MONITORING') {
+      const siblings = await this.metricRepo.find({
+        where:
+          metric.parentMetricId == null
+            ? {
+                sourceType: 'MONITORING',
+                categoryId: metric.categoryId,
+                parentMetricId: IsNull(),
+              }
+            : {
+                sourceType: 'MONITORING',
+                parentMetricId: metric.parentMetricId,
+              },
+      });
+      const clash = siblings.find(
+        (m) => m.metricId !== metric.metricId && m.metricName === name,
+      );
+      if (clash) {
+        throw new BadRequestException(
+          `같은 위치에 이미 「${name}」 지표가 있습니다. 다른 이름을 사용해 주세요.`,
+        );
+      }
+      return;
+    }
+
+    const duplicate = await this.metricRepo.findOne({
+      where: {
+        metricName: name,
+        sourceType: metric.sourceType,
+        metricId: Not(metric.metricId),
+      },
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        `이미 「${name}」 지표가 있습니다. 엑셀 업로드가 지표명으로 값을 찾기 때문에 중복 이름은 사용할 수 없습니다.`,
+      );
+    }
+  }
+
+  async setCategoryHidden(
+    categoryId: number,
+    isHidden: boolean,
+  ): Promise<IrMetricCategory> {
+    const cat = await this.categoryRepo.findOne({ where: { categoryId } });
+    if (!cat) {
+      throw new NotFoundException('카테고리를 찾을 수 없습니다.');
+    }
+    cat.isHidden = isHidden;
+    return this.categoryRepo.save(cat);
+  }
+
+  async setMetricHidden(
+    metricId: number,
+    isHidden: boolean,
+  ): Promise<IrMetricRegistry> {
+    const metric = await this.metricRepo.findOne({ where: { metricId } });
+    if (!metric) {
+      throw new NotFoundException('지표를 찾을 수 없습니다.');
+    }
+    metric.isHidden = isHidden;
+    return this.metricRepo.save(metric);
+  }
+
+  /** 하위 지표를 먼저 지운 뒤 본 지표를 삭제한다. raw_data는 FK CASCADE. */
+  private async deleteMetricTree(metricId: number): Promise<void> {
+    const children = await this.metricRepo.find({
+      where: { parentMetricId: metricId },
+    });
+    for (const child of children) {
+      await this.deleteMetricTree(child.metricId);
+    }
+    await this.metricRepo.delete(metricId);
+  }
+
+  async deleteMetric(metricId: number): Promise<{ ok: true }> {
+    const metric = await this.metricRepo.findOne({ where: { metricId } });
+    if (!metric) {
+      throw new NotFoundException('지표를 찾을 수 없습니다.');
+    }
+    await this.deleteMetricTree(metricId);
+    return { ok: true };
+  }
+
+  /**
+   * 카테고리와 소속 지표·원본 데이터를 삭제. 「분류없음」 자체는 삭제 불가.
    */
   async deleteCategory(categoryId: number): Promise<{ ok: true }> {
     const cat = await this.categoryRepo.findOne({ where: { categoryId } });
@@ -257,13 +792,18 @@ export class MetricsService {
       );
     }
 
-    const uncategorized = await this.ensureUncategorizedCategory(
-      cat.sourceType === 'INTERNAL' ? 'INTERNAL' : 'ALIMI',
+    const metrics = await this.metricRepo.find({ where: { categoryId } });
+    const ids = new Set(metrics.map((m) => m.metricId));
+    const roots = metrics.filter(
+      (m) => m.parentMetricId == null || !ids.has(m.parentMetricId),
     );
-    await this.metricRepo.update(
-      { categoryId },
-      { categoryId: uncategorized.categoryId },
-    );
+    for (const root of roots) {
+      await this.deleteMetricTree(root.metricId);
+    }
+    const leftover = await this.metricRepo.find({ where: { categoryId } });
+    for (const m of leftover) {
+      await this.deleteMetricTree(m.metricId);
+    }
     await this.categoryRepo.delete(categoryId);
     return { ok: true };
   }
@@ -273,7 +813,12 @@ export class MetricsService {
    */
   async reorder(payload: {
     categories?: { categoryId: number; displayOrder: number }[];
-    metrics?: { metricId: number; categoryId: number; displayOrder: number }[];
+    metrics?: {
+      metricId: number;
+      categoryId: number;
+      displayOrder: number;
+      parentMetricId?: number | null;
+    }[];
   }): Promise<{ ok: true }> {
     for (const c of payload.categories ?? []) {
       await this.categoryRepo.update(c.categoryId, {
@@ -281,12 +826,15 @@ export class MetricsService {
       });
     }
     for (const m of payload.metrics ?? []) {
-      await this.metricRepo.update(m.metricId, {
+      const patch: Partial<IrMetricRegistry> = {
         categoryId: m.categoryId,
         displayOrder: m.displayOrder,
-      });
+      };
+      if ('parentMetricId' in m) {
+        patch.parentMetricId = m.parentMetricId ?? null;
+      }
+      await this.metricRepo.update(m.metricId, patch);
     }
-    // 「분류없음」은 항상 최상단 유지
     await this.ensureMetricDomains();
     return { ok: true };
   }

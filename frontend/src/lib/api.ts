@@ -35,20 +35,44 @@ api.interceptors.response.use(
   },
 );
 
+export type MetricSourceType = 'ALIMI' | 'INTERNAL' | 'MONITORING';
+
 export interface MetricNode {
   metricId: number;
+  /** 시드 지표 고유 코드(모니터링). 지표명을 바꿔도 유지되는 매칭 기준 */
+  metricCode?: string | null;
   metricName: string;
   metricUnit: string | null;
-  sourceType: 'ALIMI' | 'INTERNAL';
+  sourceType: MetricSourceType;
   displayOrder: number;
+  parentMetricId?: number | null;
+  isHidden?: boolean;
+  children?: MetricNode[];
 }
 
 export interface CategoryTreeNode {
   categoryId: number;
+  /** 시드 카테고리 고유 코드(모니터링). 카테고리명을 바꿔도 유지 */
+  categoryCode?: string | null;
   categoryName: string;
   displayOrder: number;
-  sourceType?: 'ALIMI' | 'INTERNAL';
+  sourceType?: MetricSourceType;
+  isHidden?: boolean;
   metrics: MetricNode[];
+}
+
+/** 조회·지표선택용: 숨김 카테고리/지표를 트리에서 제거 */
+export function excludeHiddenFromTree(
+  tree: CategoryTreeNode[],
+): CategoryTreeNode[] {
+  const walk = (metrics: MetricNode[]): MetricNode[] =>
+    (metrics ?? [])
+      .filter((m) => !m.isHidden)
+      .map((m) => ({ ...m, children: walk(m.children ?? []) }));
+  return tree
+    .filter((c) => !c.isHidden)
+    .map((c) => ({ ...c, metrics: walk(c.metrics) }))
+    .filter((c) => c.metrics.length > 0);
 }
 
 export type TargetTreeLevel =
@@ -146,11 +170,14 @@ export interface UniversityCodebook {
 
 export interface MetricCodebookEntry {
   metricId: number;
+  metricCode?: string | null;
   metricName: string;
-  sourceType: 'ALIMI' | 'INTERNAL';
-  sourceLabel: '공시' | '자체';
+  sourceType: MetricSourceType;
+  sourceLabel: string;
   categoryName: string;
   metricUnit: string | null;
+  parentMetricId?: number | null;
+  parentMetricName?: string | null;
 }
 
 export interface MetricCodebook {
@@ -211,6 +238,13 @@ export type RawCorrectionListParams = {
 export async function fetchRawCorrectionYears() {
   const { data } = await api.get<number[]>('/raw-correction/years');
   return data;
+}
+
+export async function fetchMonitoringYears() {
+  const { data } = await api.get<number[]>('/metrics/monitoring/years');
+  return Array.isArray(data)
+    ? data.map(Number).filter((y) => Number.isFinite(y))
+    : [];
 }
 
 export async function fetchRawCorrectionList(params: RawCorrectionListParams) {

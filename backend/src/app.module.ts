@@ -11,6 +11,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
 import { PivotModule } from './modules/pivot/pivot.module';
 import { PresetsModule } from './modules/presets/presets.module';
 import { RawCorrectionModule } from './modules/raw-correction/raw-correction.module';
+import { StrategicPlanModule } from './modules/strategic-plan/strategic-plan.module';
 import { UniversitiesModule } from './modules/universities/universities.module';
 import { UpdateLogModule } from './modules/update-log/update-log.module';
 import { UploadModule } from './modules/upload/upload.module';
@@ -33,6 +34,7 @@ import { UsersModule } from './modules/users/users.module';
     UploadModule,
     AnnualEventsModule,
     RawCorrectionModule,
+    StrategicPlanModule,
   ],
 })
 export class AppModule {}

@@ -1,0 +1,153 @@
+'use client';
+
+import { MonitoringTrendChart } from './MonitoringTrendChart';
+import { HierarchyCompareChart } from './HierarchyCompareChart';
+import type { KpiViewModel } from '@/lib/monitoring/fetchMonitoringData';
+import type { OrgStructure, YearValueMap } from '@/lib/monitoring/types';
+import { formatValueWithUnit } from '@/lib/dataFormatters';
+
+export function MetricDetailViewer({
+  view,
+  org,
+}: {
+  view: KpiViewModel;
+  org: OrgStructure;
+}) {
+  return (
+    <div className="space-y-8">
+      <div>
+        <h3 className="mb-1 text-lg">{view.label}</h3>
+        <p className="text-sm text-muted-foreground">
+          대학 단위 추이와 하위 위계(계열·학과) 비교입니다.
+        </p>
+      </div>
+
+      <section className="space-y-3">
+        <h4 className="text-base font-bold">1. 추이 그래프</h4>
+        <p className="text-sm text-muted-foreground">
+          {view.accounting
+            ? `대학 예산은 수입과 지출을 따로 봅니다. 그래프는 ${view.selectedYear - 2}~${view.selectedYear}년 수입·지출 추이입니다.`
+            : `${view.selectedYear}년 기준 직전 2년을 포함한 3개년 추이입니다.`}
+        </p>
+        <MonitoringTrendChart
+          years={view.years}
+          values={view.accounting ? view.accounting.income : view.univ}
+          unit={view.unit}
+          label={view.accounting ? '수입' : view.label}
+          second={
+            view.accounting
+              ? { values: view.accounting.expense, label: '지출' }
+              : undefined
+          }
+        />
+      </section>
+
+      {view.accounting && (
+        <section className="space-y-3">
+          <h4 className="text-base font-bold">2. 수입·지출 구성</h4>
+          <div className="grid gap-4 md:grid-cols-2">
+            <AccountingLineTable
+              title={`수입 (${view.selectedYear}년)`}
+              years={view.years}
+              lines={view.accounting.incomeLines}
+              unit={view.unit}
+            />
+            <AccountingLineTable
+              title={`지출 (${view.selectedYear}년)`}
+              years={view.years}
+              lines={view.accounting.expenseLines}
+              unit={view.unit}
+            />
+          </div>
+        </section>
+      )}
+
+      <section className="space-y-3">
+        <h4 className="text-base font-bold">
+          {view.accounting ? '3. 하위위계별 비교' : '2. 하위위계별 비교'}
+        </h4>
+        <p className="text-sm text-muted-foreground">
+          {view.selectedYear}년 기준으로 계열·학과를 켜면 해당 위계가 모두 가로
+          막대로 표시됩니다. 같은 위계에서 상위 10%는 밝은 파랑, 하위 10%는 밝은
+          빨강입니다. 달성값순, 이름순, 학과나열순(편제 순서)과 오름/내림차순을
+          바꿀 수 있습니다.
+        </p>
+        {view.accounting ? (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <h5 className="text-sm font-bold">수입</h5>
+              <HierarchyCompareChart
+                key={`${view.id}-income`}
+                view={{
+                  ...view,
+                  label: `${view.label} · 수입`,
+                  univ: view.accounting.income,
+                  depts: view.accounting.incomeDepts,
+                  yoy: view.accounting.incomeYoy,
+                }}
+                org={org}
+              />
+            </div>
+            <div className="space-y-2">
+              <h5 className="text-sm font-bold">지출</h5>
+              <HierarchyCompareChart
+                key={`${view.id}-expense`}
+                view={{
+                  ...view,
+                  label: `${view.label} · 지출`,
+                  univ: view.accounting.expense,
+                  depts: view.accounting.expenseDepts,
+                  yoy: view.accounting.expenseYoy,
+                }}
+                org={org}
+              />
+            </div>
+          </div>
+        ) : (
+          <HierarchyCompareChart key={view.id} view={view} org={org} />
+        )}
+      </section>
+    </div>
+  );
+}
+
+function AccountingLineTable({
+  title,
+  years,
+  lines,
+  unit,
+}: {
+  title: string;
+  years: number[];
+  lines: { name: string; univ: YearValueMap }[];
+  unit: string | null;
+}) {
+  const selectedYear = [...years].sort((a, b) => a - b).at(-1);
+  return (
+    <div className="rounded-md border bg-background">
+      <div className="border-b px-3 py-2 text-sm font-bold">{title}</div>
+      <table className="w-full text-sm">
+        <tbody>
+          {lines.length === 0 ? (
+            <tr>
+              <td className="px-3 py-4 text-muted-foreground">
+                하위 항목이 없습니다.
+              </td>
+            </tr>
+          ) : (
+            lines.map((line) => (
+              <tr key={line.name} className="border-t">
+                <td className="px-3 py-1.5">{line.name}</td>
+                <td className="px-3 py-1.5 text-right font-mono">
+                  {selectedYear == null
+                    ? '-'
+                    : formatValueWithUnit(line.univ[selectedYear] ?? null, unit)}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}

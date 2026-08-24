@@ -15,16 +15,20 @@ import {
   Pencil,
   Plus,
   Save,
+  Settings2,
   Trash2,
   X,
 } from 'lucide-react';
 import { api, type CategoryTreeNode, type MetricNode } from '@/lib/api';
 import { UNCATEGORIZED_CATEGORY_NAME } from '@/lib/metricConstants';
+import { monitoringComputeRole } from '@/lib/monitoring/catalog';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const CATEGORIES_DROPPABLE_ID = 'categories';
@@ -52,8 +56,198 @@ function splitTree(nodes: CategoryTreeNode[]): {
 }
 
 function metricLabel(m: MetricNode): string {
-  // metric_name 사용 (학과단위 지표는 뒤에 (학과별)이 붙음)
-  return m.metricName;
+  const name = m.metricName;
+  return m.isHidden ? `[숨김] ${name}` : name;
+}
+
+function ComputeRoleBadge({ metricCode }: { metricCode?: string | null }) {
+  const role = monitoringComputeRole(metricCode);
+  if (!role) return null;
+  if (role === 'computed') {
+    return (
+      <Badge
+        variant="outline"
+        className="shrink-0 border-violet-300 bg-violet-50 text-violet-800"
+        title="하위 구성항목을 합산해 조회 화면에 표시합니다. 이 행 자체는 업로드하지 않습니다."
+      >
+        자동계산
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 border-sky-300 bg-sky-50 text-sky-800"
+      title="자동계산 지표의 입력 항목입니다. 엑셀 업로드 대상입니다."
+    >
+      구성항목
+    </Badge>
+  );
+}
+
+function categoryLabel(cat: CategoryTreeNode): string {
+  return cat.isHidden ? `[숨김] ${cat.categoryName}` : cat.categoryName;
+}
+
+function countMetricNodes(metrics: MetricNode[]): number {
+  return metrics.reduce(
+    (n, m) => n + 1 + countMetricNodes(m.children ?? []),
+    0,
+  );
+}
+
+function setMetricHiddenInTree(
+  metrics: MetricNode[],
+  metricId: number,
+  isHidden: boolean,
+): MetricNode[] {
+  return metrics.map((m) => {
+    if (m.metricId === metricId) return { ...m, isHidden };
+    return {
+      ...m,
+      children: setMetricHiddenInTree(m.children ?? [], metricId, isHidden),
+    };
+  });
+}
+
+function removeMetricFromTree(
+  metrics: MetricNode[],
+  metricId: number,
+): MetricNode[] {
+  return metrics
+    .filter((m) => m.metricId !== metricId)
+    .map((m) => ({
+      ...m,
+      children: removeMetricFromTree(m.children ?? [], metricId),
+    }));
+}
+
+function renameMetricInTree(
+  metrics: MetricNode[],
+  metricId: number,
+  metricName: string,
+): MetricNode[] {
+  return metrics.map((m) => {
+    if (m.metricId === metricId) return { ...m, metricName };
+    return {
+      ...m,
+      children: renameMetricInTree(m.children ?? [], metricId, metricName),
+    };
+  });
+}
+
+/** 들여쓰기 폭: 상위 지표 아래 하위·하위하위 지표 */
+function depthIndentClass(depth: number): string {
+  if (depth <= 0) return '';
+  if (depth === 1) return 'ml-8';
+  if (depth === 2) return 'ml-14';
+  return 'ml-20';
+}
+
+function VisibilityControls({
+  hidden,
+  onHiddenChange,
+  onDelete,
+  deleteDisabled,
+  deleteTitle,
+  busy,
+}: {
+  hidden: boolean;
+  onHiddenChange: (value: boolean) => void;
+  onDelete?: () => void;
+  deleteDisabled?: boolean;
+  deleteTitle?: string;
+  busy?: boolean;
+}) {
+  return (
+    <div
+      className="flex shrink-0 items-center gap-2"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        숨김
+        <Switch
+          checked={hidden}
+          disabled={busy}
+          onCheckedChange={onHiddenChange}
+        />
+      </label>
+      {onDelete && (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 px-2 text-destructive hover:text-destructive"
+          disabled={busy || deleteDisabled}
+          onClick={onDelete}
+          title={deleteTitle ?? '삭제'}
+          aria-label={deleteTitle ?? '삭제'}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function flattenMetricNodes(metrics: MetricNode[]): MetricNode[] {
+  return metrics.flatMap((m) => [
+    m,
+    ...flattenMetricNodes(m.children ?? []),
+  ]);
+}
+
+function flattenMetricsForSave(
+  metrics: MetricNode[],
+  categoryId: number,
+  parentMetricId: number | null,
+): {
+  metricId: number;
+  categoryId: number;
+  displayOrder: number;
+  parentMetricId: number | null;
+}[] {
+  return metrics.flatMap((m, index) => [
+    {
+      metricId: m.metricId,
+      categoryId,
+      displayOrder: index,
+      parentMetricId,
+    },
+    ...flattenMetricsForSave(m.children ?? [], categoryId, m.metricId),
+  ]);
+}
+
+function extractSelectedMetrics(
+  metrics: MetricNode[],
+  idSet: Set<number>,
+): { remaining: MetricNode[]; collected: MetricNode[] } {
+  const remaining: MetricNode[] = [];
+  const collected: MetricNode[] = [];
+  for (const m of metrics) {
+    if (idSet.has(m.metricId)) {
+      collected.push(m);
+      continue;
+    }
+    const nested = extractSelectedMetrics(m.children ?? [], idSet);
+    remaining.push({ ...m, children: nested.remaining });
+    collected.push(...nested.collected);
+  }
+  return { remaining, collected };
+}
+
+function sourceBadge(sourceType: MetricNode['sourceType']) {
+  if (sourceType === 'ALIMI') return { variant: 'alimi' as const, label: '공시' };
+  if (sourceType === 'INTERNAL')
+    return { variant: 'internal' as const, label: '자체' };
+  return { variant: 'monitoring' as const, label: '모니터링' };
+}
+
+function sourceTitle(sourceType: 'ALIMI' | 'INTERNAL' | 'MONITORING') {
+  if (sourceType === 'ALIMI') return '대학정보공시';
+  if (sourceType === 'INTERNAL') return '대학자체데이터';
+  return '대학주요모니터링';
 }
 
 function moveMetricsInTree(
@@ -67,12 +261,9 @@ function moveMetricsInTree(
   const collected: MetricNode[] = [];
 
   for (const cat of next) {
-    const remaining: MetricNode[] = [];
-    for (const m of cat.metrics) {
-      if (idSet.has(m.metricId)) collected.push(m);
-      else remaining.push(m);
-    }
-    cat.metrics = remaining;
+    const extracted = extractSelectedMetrics(cat.metrics, idSet);
+    cat.metrics = extracted.remaining;
+    collected.push(...extracted.collected);
   }
 
   // 원본 선택 순서 유지
@@ -122,7 +313,7 @@ function reorderCategoriesInTree(
 function TreeBuilderPane({
   sourceType,
 }: {
-  sourceType: 'ALIMI' | 'INTERNAL';
+  sourceType: 'ALIMI' | 'INTERNAL' | 'MONITORING';
 }) {
   const [tree, setTree] = useState<CategoryTreeNode[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -134,10 +325,45 @@ function TreeBuilderPane({
   const [renaming, setRenaming] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [moveTargetId, setMoveTargetId] = useState('');
+  const [newMetricByCategory, setNewMetricByCategory] = useState<
+    Record<number, string>
+  >({});
+  const [addingChildOf, setAddingChildOf] = useState<number | null>(null);
+  const [childMetricName, setChildMetricName] = useState('');
+  const [settingsMode, setSettingsMode] = useState(false);
+  const [deletingMetricId, setDeletingMetricId] = useState<number | null>(null);
+  const [editingMetricId, setEditingMetricId] = useState<number | null>(null);
+  const [editingMetricName, setEditingMetricName] = useState('');
+  const [renamingMetric, setRenamingMetric] = useState(false);
+
+  /** 공시(ALIMI)는 알리미 배치가 지표명으로 값을 물므로 수정 불가. 자체·모니터링은 metric_id가 유지된다. */
+  const metricRenameEnabled = sourceType !== 'ALIMI';
+
+  const handleAddMetric = async (
+    categoryId: number,
+    parentMetricId: number | null,
+    name: string,
+  ) => {
+    const metricName = name.trim();
+    if (!metricName) return;
+    await api.post('/metrics', {
+      categoryId,
+      sourceType,
+      metricName,
+      parentMetricId,
+    });
+    setNewMetricByCategory((prev) => ({ ...prev, [categoryId]: '' }));
+    setAddingChildOf(null);
+    setChildMetricName('');
+    window.dispatchEvent(new Event('ir-metrics-changed'));
+    load();
+  };
 
   const load = () => {
     api
-      .get<CategoryTreeNode[]>('/metrics/tree', { params: { sourceType } })
+      .get<CategoryTreeNode[]>('/metrics/tree', {
+        params: { sourceType, includeHidden: true },
+      })
       .then(({ data }) => {
         setTree(sortTree(data));
         setSelectedIds(new Set());
@@ -164,20 +390,22 @@ function TreeBuilderPane({
   const categorySelectionState = (
     cat: CategoryTreeNode,
   ): boolean | 'indeterminate' => {
-    if (cat.metrics.length === 0) return false;
-    const selectedCount = cat.metrics.filter((m) =>
+    const all = flattenMetricNodes(cat.metrics);
+    if (all.length === 0) return false;
+    const selectedCount = all.filter((m) =>
       selectedIds.has(m.metricId),
     ).length;
     if (selectedCount === 0) return false;
-    if (selectedCount === cat.metrics.length) return true;
+    if (selectedCount === all.length) return true;
     return 'indeterminate';
   };
 
   const toggleSelectCategory = (cat: CategoryTreeNode) => {
-    const allSelected = cat.metrics.every((m) => selectedIds.has(m.metricId));
+    const all = flattenMetricNodes(cat.metrics);
+    const allSelected = all.length > 0 && all.every((m) => selectedIds.has(m.metricId));
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      for (const m of cat.metrics) {
+      for (const m of all) {
         if (allSelected) next.delete(m.metricId);
         else next.add(m.metricId);
       }
@@ -257,11 +485,7 @@ function TreeBuilderPane({
     setSaving(true);
     try {
       const metrics = tree.flatMap((cat) =>
-        cat.metrics.map((m: MetricNode, index) => ({
-          metricId: m.metricId,
-          categoryId: cat.categoryId,
-          displayOrder: index,
-        })),
+        flattenMetricsForSave(cat.metrics, cat.categoryId, null),
       );
       const categories = tree.map((c, index) => ({
         categoryId: c.categoryId,
@@ -330,10 +554,131 @@ function TreeBuilderPane({
     }
   };
 
+  const handleSetCategoryHidden = async (
+    cat: CategoryTreeNode,
+    isHidden: boolean,
+  ) => {
+    try {
+      await api.put(`/metrics/categories/${cat.categoryId}/hidden`, {
+        isHidden,
+      });
+      setTree((prev) =>
+        prev.map((c) =>
+          c.categoryId === cat.categoryId ? { ...c, isHidden } : c,
+        ),
+      );
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      alert(err.response?.data?.message ?? '숨김 설정 실패');
+      load();
+    }
+  };
+
+  const handleSetMetricHidden = async (metric: MetricNode, isHidden: boolean) => {
+    try {
+      await api.put(`/metrics/${metric.metricId}/hidden`, { isHidden });
+      setTree((prev) =>
+        prev.map((c) => ({
+          ...c,
+          metrics: setMetricHiddenInTree(c.metrics, metric.metricId, isHidden),
+        })),
+      );
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      alert(err.response?.data?.message ?? '숨김 설정 실패');
+      load();
+    }
+  };
+
+  const startRenameMetric = (metric: MetricNode) => {
+    if (!metricRenameEnabled) return;
+    setEditingMetricId(metric.metricId);
+    setEditingMetricName(metric.metricName);
+  };
+
+  const cancelRenameMetric = () => {
+    setEditingMetricId(null);
+    setEditingMetricName('');
+  };
+
+  const handleRenameMetric = async (metric: MetricNode) => {
+    const name = editingMetricName.trim();
+    if (!name) {
+      alert('지표명을 입력해 주세요.');
+      return;
+    }
+    if (name === metric.metricName) {
+      cancelRenameMetric();
+      return;
+    }
+    setRenamingMetric(true);
+    try {
+      const { data } = await api.put<MetricNode>(
+        `/metrics/${metric.metricId}`,
+        { metricName: name },
+      );
+      // 서버가 (학과별) 접미사를 보정할 수 있으므로 응답값을 반영
+      setTree((prev) =>
+        prev.map((c) => ({
+          ...c,
+          metrics: renameMetricInTree(
+            c.metrics,
+            metric.metricId,
+            data?.metricName ?? name,
+          ),
+        })),
+      );
+      cancelRenameMetric();
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      alert(err.response?.data?.message ?? '지표명 수정 실패');
+    } finally {
+      setRenamingMetric(false);
+    }
+  };
+
+  const handleDeleteMetric = async (metric: MetricNode) => {
+    const childCount = countMetricNodes(metric.children ?? []);
+    const extra =
+      childCount > 0
+        ? `\n하위 지표 ${childCount}개와 원본 데이터도 함께 삭제되며 되돌릴 수 없습니다.`
+        : '\n원본 데이터도 함께 삭제되며 되돌릴 수 없습니다.';
+    const ok = window.confirm(
+      `지표 「${metric.metricName}」을(를) 삭제할까요?${extra}`,
+    );
+    if (!ok) return;
+    setDeletingMetricId(metric.metricId);
+    try {
+      await api.delete(`/metrics/${metric.metricId}`);
+      if (editingMetricId === metric.metricId) cancelRenameMetric();
+      setTree((prev) =>
+        prev.map((c) => ({
+          ...c,
+          metrics: removeMetricFromTree(c.metrics, metric.metricId),
+        })),
+      );
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(metric.metricId);
+        for (const child of flattenMetricNodes(metric.children ?? [])) {
+          next.delete(child.metricId);
+        }
+        return next;
+      });
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string } } };
+      alert(err.response?.data?.message ?? '지표 삭제 실패');
+      load();
+    } finally {
+      setDeletingMetricId(null);
+    }
+  };
+
   const handleDeleteCategory = async (cat: CategoryTreeNode) => {
     if (isUncategorized(cat)) return;
+    const n = countMetricNodes(cat.metrics);
     const ok = window.confirm(
-      `카테고리 「${cat.categoryName}」을(를) 삭제할까요?\n소속 지표는 「${UNCATEGORIZED_CATEGORY_NAME}」으로 이동됩니다.`,
+      `카테고리 「${cat.categoryName}」을(를) 삭제할까요?\n소속 지표 ${n}개와 원본 데이터가 함께 삭제되며 되돌릴 수 없습니다.`,
     );
     if (!ok) return;
     setDeletingId(cat.categoryId);
@@ -353,6 +698,218 @@ function TreeBuilderPane({
   const selectedCount = selectedIds.size;
   const { uncategorized, ordered } = splitTree(tree);
 
+  const toggleSettingsMode = () => {
+    setSettingsMode((prev) => {
+      if (!prev) {
+        clearSelection();
+        cancelRenameCategory();
+        cancelRenameMetric();
+      }
+      return !prev;
+    });
+  };
+
+  /** 지표 한 줄. depth>0이면 하위 지표(드래그 불가). */
+  const renderMetricRow = (
+    m: MetricNode,
+    cat: CategoryTreeNode,
+    depth: number,
+    dragHandleProps?: DraggableProvidedDragHandleProps | null,
+  ) => {
+    const isSelected = selectedIds.has(m.metricId);
+    const badge = sourceBadge(m.sourceType);
+    const editing = editingMetricId === m.metricId;
+    const draggable = depth === 0 && !!dragHandleProps && !settingsMode && !editing;
+    const busy = deletingMetricId === m.metricId;
+
+    return (
+      <div key={m.metricId} className={cn('space-y-1', depthIndentClass(depth))}>
+        <div
+          className={cn(
+            'flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-sm',
+            depth > 0 && 'bg-muted/30',
+            isSelected && 'border-primary/40 bg-primary/5',
+            m.isHidden && 'border-dashed bg-muted/60',
+          )}
+        >
+          {!settingsMode && !editing && (
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={() => toggleSelect(m.metricId)}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              aria-label={`${metricLabel(m)} 선택`}
+            />
+          )}
+          {editing ? (
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              <Input
+                value={editingMetricName}
+                onChange={(e) => setEditingMetricName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleRenameMetric(m);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelRenameMetric();
+                  }
+                }}
+                className="h-8"
+                disabled={renamingMetric}
+                autoFocus
+                aria-label="지표명 수정"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2"
+                disabled={renamingMetric}
+                onClick={() => void handleRenameMetric(m)}
+                title="지표명 저장"
+                aria-label="지표명 저장"
+              >
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2"
+                disabled={renamingMetric}
+                onClick={cancelRenameMetric}
+                title="수정 취소"
+                aria-label="수정 취소"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : draggable ? (
+            <span
+              {...dragHandleProps}
+              className="flex min-w-0 flex-1 cursor-grab items-center gap-2 active:cursor-grabbing"
+            >
+              <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span
+                className={cn(
+                  'truncate font-mono text-[13px]',
+                  m.isHidden && 'text-muted-foreground',
+                )}
+              >
+                {metricLabel(m)}
+              </span>
+            </span>
+          ) : (
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate font-mono text-[13px]',
+                m.isHidden && 'text-muted-foreground',
+              )}
+            >
+              {metricLabel(m)}
+            </span>
+          )}
+          {!editing && (
+            <>
+              {sourceType === 'MONITORING' && !settingsMode && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddingChildOf(m.metricId);
+                    setChildMetricName('');
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  하위
+                </Button>
+              )}
+              {metricRenameEnabled && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 shrink-0 px-2"
+                  disabled={renamingMetric || busy}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startRenameMetric(m);
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  title="지표명 수정"
+                  aria-label={`${m.metricName} 지표명 수정`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              )}
+              {sourceType === 'MONITORING' && (
+                <ComputeRoleBadge metricCode={m.metricCode} />
+              )}
+              <Badge variant={badge.variant}>{badge.label}</Badge>
+              {settingsMode && (
+                <VisibilityControls
+                  hidden={!!m.isHidden}
+                  onHiddenChange={(v) => void handleSetMetricHidden(m, v)}
+                  onDelete={() => void handleDeleteMetric(m)}
+                  deleteTitle="지표 삭제"
+                  busy={busy}
+                />
+              )}
+            </>
+          )}
+        </div>
+        {addingChildOf === m.metricId && (
+          <div className="ml-8 flex gap-2">
+            <Input
+              className="h-8"
+              placeholder="하위 지표 이름"
+              value={childMetricName}
+              onChange={(e) => setChildMetricName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleAddMetric(
+                    cat.categoryId,
+                    m.metricId,
+                    childMetricName,
+                  );
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              className="h-8"
+              onClick={() =>
+                void handleAddMetric(cat.categoryId, m.metricId, childMetricName)
+              }
+            >
+              추가
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8"
+              onClick={() => {
+                setAddingChildOf(null);
+                setChildMetricName('');
+              }}
+            >
+              취소
+            </Button>
+          </div>
+        )}
+        {(m.children ?? []).map((child) =>
+          renderMetricRow(child, cat, depth + 1),
+        )}
+      </div>
+    );
+  };
+
   const renderCategoryBody = (
     cat: CategoryTreeNode,
     categoryDragHandleProps?: DraggableProvidedDragHandleProps | null,
@@ -364,7 +921,7 @@ function TreeBuilderPane({
       <>
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            {categoryDragHandleProps && (
+            {categoryDragHandleProps && !settingsMode && (
               <span
                 {...categoryDragHandleProps}
                 className="flex shrink-0 cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
@@ -374,12 +931,14 @@ function TreeBuilderPane({
                 <GripVertical className="h-4 w-4" />
               </span>
             )}
-            <Checkbox
-              checked={catChecked}
-              disabled={cat.metrics.length === 0}
-              onCheckedChange={() => toggleSelectCategory(cat)}
-              aria-label={`${cat.categoryName} 전체 선택`}
-            />
+            {!settingsMode && (
+              <Checkbox
+                checked={catChecked}
+                disabled={cat.metrics.length === 0}
+                onCheckedChange={() => toggleSelectCategory(cat)}
+                aria-label={`${cat.categoryName} 전체 선택`}
+              />
+            )}
             {editingId === cat.categoryId ? (
               <div className="flex min-w-0 flex-1 items-center gap-1">
                 <Input
@@ -425,8 +984,12 @@ function TreeBuilderPane({
                 </Button>
               </div>
             ) : (
-              <div className="min-w-0 text-sm font-bold">
-                {cat.categoryName}
+              <div
+                className={`min-w-0 text-sm font-bold ${
+                  cat.isHidden ? 'text-muted-foreground' : ''
+                }`}
+              >
+                {categoryLabel(cat)}
                 {uncategorizedCat && (
                   <span className="ml-2 text-xs font-medium text-amber-800">
                     엑셀 업로드 대기 분류
@@ -440,33 +1003,36 @@ function TreeBuilderPane({
               </div>
             )}
           </div>
-          {!uncategorizedCat && editingId !== cat.categoryId && (
-            <div className="flex shrink-0 items-center gap-0.5">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 px-2"
-                disabled={renaming || deletingId != null}
-                onClick={() => startRenameCategory(cat)}
-                title="카테고리 이름 수정"
-                aria-label="카테고리 이름 수정"
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 px-2 text-destructive hover:text-destructive"
-                disabled={deletingId === cat.categoryId}
-                onClick={() => handleDeleteCategory(cat)}
-                title="카테고리 삭제"
-                aria-label="카테고리 삭제"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
+          {settingsMode ? (
+            <VisibilityControls
+              hidden={!!cat.isHidden}
+              onHiddenChange={(v) => void handleSetCategoryHidden(cat, v)}
+              onDelete={
+                uncategorizedCat
+                  ? undefined
+                  : () => void handleDeleteCategory(cat)
+              }
+              deleteTitle="카테고리 삭제"
+              busy={deletingId === cat.categoryId}
+            />
+          ) : (
+            !uncategorizedCat &&
+            editingId !== cat.categoryId && (
+              <div className="flex shrink-0 items-center gap-0.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 px-2"
+                  disabled={renaming || deletingId != null}
+                  onClick={() => startRenameCategory(cat)}
+                  title="카테고리 이름 수정"
+                  aria-label="카테고리 이름 수정"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </div>
+            )
           )}
         </div>
         <Droppable droppableId={String(cat.categoryId)} type="METRIC">
@@ -478,56 +1044,71 @@ function TreeBuilderPane({
                 snapshot.isDraggingOver ? 'bg-primary/5' : ''
               }`}
             >
-              {cat.metrics.map((m, index) => {
-                const isSelected = selectedIds.has(m.metricId);
-                return (
-                  <Draggable
-                    key={m.metricId}
-                    draggableId={String(m.metricId)}
-                    index={index}
-                  >
-                    {(dragProvided) => (
-                      <div
-                        ref={dragProvided.innerRef}
-                        {...dragProvided.draggableProps}
-                        className={`flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-sm ${
-                          isSelected
-                            ? 'border-primary/40 bg-primary/5'
-                            : ''
-                        }`}
-                      >
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => toggleSelect(m.metricId)}
-                          onClick={(e) => e.stopPropagation()}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          aria-label={`${metricLabel(m)} 선택`}
-                        />
-                        <span
-                          {...dragProvided.dragHandleProps}
-                          className="flex min-w-0 flex-1 cursor-grab items-center gap-2 active:cursor-grabbing"
-                        >
-                          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate font-mono text-[13px]">
-                            {metricLabel(m)}
-                          </span>
-                        </span>
-                        <Badge
-                          variant={
-                            m.sourceType === 'ALIMI' ? 'alimi' : 'internal'
-                          }
-                        >
-                          {m.sourceType === 'ALIMI' ? '공시' : '자체'}
-                        </Badge>
-                      </div>
-                    )}
-                  </Draggable>
-                );
-              })}
+              {cat.metrics.map((m, index) => (
+                <Draggable
+                  key={m.metricId}
+                  draggableId={String(m.metricId)}
+                  index={index}
+                  isDragDisabled={settingsMode || editingMetricId != null}
+                >
+                  {(dragProvided) => (
+                    <div
+                      ref={dragProvided.innerRef}
+                      {...dragProvided.draggableProps}
+                    >
+                      {renderMetricRow(
+                        m,
+                        cat,
+                        0,
+                        dragProvided.dragHandleProps,
+                      )}
+                    </div>
+                  )}
+                </Draggable>
+              ))}
               {provided.placeholder}
               {cat.metrics.length === 0 && (
                 <div className="py-2 text-center text-xs text-muted-foreground">
                   지표를 여기로 드래그
+                </div>
+              )}
+              {sourceType === 'MONITORING' && !isUncategorized(cat) && (
+                <div className="flex gap-2 pt-1">
+                  <Input
+                    className="h-8"
+                    placeholder="이 분류에 지표 추가"
+                    value={newMetricByCategory[cat.categoryId] ?? ''}
+                    onChange={(e) =>
+                      setNewMetricByCategory((prev) => ({
+                        ...prev,
+                        [cat.categoryId]: e.target.value,
+                      }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void handleAddMetric(
+                          cat.categoryId,
+                          null,
+                          newMetricByCategory[cat.categoryId] ?? '',
+                        );
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() =>
+                      void handleAddMetric(
+                        cat.categoryId,
+                        null,
+                        newMetricByCategory[cat.categoryId] ?? '',
+                      )
+                    }
+                  >
+                    <Plus className="mr-1 h-3 w-3" /> 지표
+                  </Button>
                 </div>
               )}
             </div>
@@ -540,18 +1121,43 @@ function TreeBuilderPane({
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle>
-          {sourceType === 'ALIMI' ? '대학정보공시' : '대학자체데이터'}
-        </CardTitle>
-        <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
-          <Save className="mr-1 h-4 w-4" /> {saving ? '저장 중...' : '작업 저장'}
-        </Button>
+        <CardTitle>{sourceTitle(sourceType)}</CardTitle>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={settingsMode ? 'default' : 'outline'}
+            onClick={toggleSettingsMode}
+            title="숨김·삭제 설정"
+            aria-pressed={settingsMode}
+          >
+            <Settings2 className="mr-1 h-4 w-4" />
+            {settingsMode ? '설정 종료' : '설정'}
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={!dirty || saving || settingsMode}
+          >
+            <Save className="mr-1 h-4 w-4" /> {saving ? '저장 중...' : '작업 저장'}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {settingsMode ? (
+          <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+            설정 모드입니다. 카테고리·지표 오른쪽에서 「숨김」을 켜면 조회 화면과
+            지표선택·업로드 양식에서 제외되고 트리에는 회색 [숨김] 표시로 남습니다.
+            같은 스위치를 끄면 다시 노출됩니다. 휴지통은 지표와 원본 데이터를
+            영구 삭제하며 되돌릴 수 없습니다. 설정 모드에서는 순서 변경이
+            잠깁니다.
+          </p>
+        ) : null}
         <p className="text-xs text-muted-foreground">
           {sourceType === 'ALIMI'
             ? '대학정보공시(알리미) 지표만 표시됩니다. dashboard 조회 대상이며, 분류 왼쪽 손잡이로 순서를 바꾸고 지표는 드래그하거나 체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요.'
-            : `엑셀로 등록된 신규 자체 지표는 최상단 「${UNCATEGORIZED_CATEGORY_NAME}」에 모입니다. competitiveness 조회 대상이며, 분류 왼쪽 손잡이로 순서를 바꾸고 지표는 드래그하거나 체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요. 자체 지표명은 업로드한 metric_name으로 표시됩니다.`}
+            : sourceType === 'INTERNAL'
+              ? `엑셀로 등록된 신규 자체 지표는 최상단 「${UNCATEGORIZED_CATEGORY_NAME}」에 모입니다. competitiveness 조회 대상이며, 분류 왼쪽 손잡이로 순서를 바꾸고 지표는 드래그하거나 체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요. 자체 지표명은 연필 버튼으로 수정할 수 있고, metric_id는 그대로 유지되므로 기존 데이터·업로드 양식·조회 화면에 바로 반영됩니다.`
+              : '대학주요모니터링 전용 지표입니다. 「자동계산」은 하위 「구성항목」을 합산해 조회 화면에 나오는 지표이고, 「구성항목」만 엑셀로 올리면 됩니다. 이 표기는 지표 DB 빌더에만 보이며 monitoring 조회 화면에는 나오지 않습니다. 지표명은 연필 버튼으로 수정할 수 있고 metric_id는 그대로입니다. 이름을 바꾼 뒤에는 양식·코드북을 다시 받으세요.'}
         </p>
 
         <div className="flex gap-2">
@@ -619,6 +1225,7 @@ function TreeBuilderPane({
                       key={cat.categoryId}
                       draggableId={`${CATEGORY_DRAG_PREFIX}${cat.categoryId}`}
                       index={index}
+                      isDragDisabled={settingsMode}
                     >
                       {(dragProvided, dragSnapshot) => (
                         <div
@@ -653,22 +1260,26 @@ export function TreeBuilder() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-bold">지표 트리 빌더</h2>
+        <h2 className="text-lg font-bold">지표 DB 빌더</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          대학정보공시 데이터는 dashboard에서, 대학자체데이터는 competitiveness에서
-          조회됩니다. 구성은 동일하지만 지표 출처가 분리되어 있습니다.
+          대학정보공시 데이터는 dashboard에서, 대학자체데이터는 competitiveness에서,
+          대학주요모니터링은 monitoring에서 조회됩니다. 구성은 분리되어 있습니다.
         </p>
       </div>
       <Tabs defaultValue="ALIMI">
         <TabsList>
           <TabsTrigger value="ALIMI">대학정보공시</TabsTrigger>
           <TabsTrigger value="INTERNAL">대학자체데이터</TabsTrigger>
+          <TabsTrigger value="MONITORING">대학주요모니터링</TabsTrigger>
         </TabsList>
         <TabsContent value="ALIMI">
           <TreeBuilderPane sourceType="ALIMI" />
         </TabsContent>
         <TabsContent value="INTERNAL">
           <TreeBuilderPane sourceType="INTERNAL" />
+        </TabsContent>
+        <TabsContent value="MONITORING">
+          <TreeBuilderPane sourceType="MONITORING" />
         </TabsContent>
       </Tabs>
     </div>

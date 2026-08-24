@@ -9,6 +9,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
+import { parseMetricSourceType } from './metric-source';
 import { MetricsService } from './metrics.service';
 
 @Controller('metrics')
@@ -17,14 +18,28 @@ export class MetricsController {
 
   // 업무 주제별 카테고리 지표 트리 (Dual-Listbox 모달용)
   @Get('tree')
-  getTree(@Query('sourceType') sourceType?: 'ALIMI' | 'INTERNAL') {
-    return this.metricsService.getCategoryTree(sourceType);
+  getTree(
+    @Query('sourceType') sourceType?: string,
+    @Query('includeHidden') includeHidden?: string,
+  ) {
+    return this.metricsService.getCategoryTree(
+      parseMetricSourceType(sourceType),
+      includeHidden === 'true' || includeHidden === '1',
+    );
   }
 
-  /** 업로드용 지표 코드북 (공시/자체 구분) */
+  /** 업로드용 지표 코드북 (공시/자체/모니터링 구분) */
   @Get('codebook')
-  getCodebook() {
-    return this.metricsService.getCodebook();
+  getCodebook(@Query('includeHidden') includeHidden?: string) {
+    return this.metricsService.getCodebook(
+      includeHidden === 'true' || includeHidden === '1',
+    );
+  }
+
+  /** 모니터링 원본 데이터가 존재하는 연도 (조회 년도 선택용) */
+  @Get('monitoring/years')
+  listMonitoringYears() {
+    return this.metricsService.listMonitoringYears();
   }
 
   @Get('categories')
@@ -38,10 +53,13 @@ export class MetricsController {
     body: {
       categoryName: string;
       displayOrder?: number;
-      sourceType?: 'ALIMI' | 'INTERNAL';
+      sourceType?: string;
     },
   ) {
-    return this.metricsService.createCategory(body);
+    return this.metricsService.createCategory({
+      ...body,
+      sourceType: parseMetricSourceType(body.sourceType),
+    });
   }
 
   @Put('categories/:id')
@@ -50,6 +68,14 @@ export class MetricsController {
     @Body() body: { categoryName: string },
   ) {
     return this.metricsService.updateCategory(id, body);
+  }
+
+  @Put('categories/:id/hidden')
+  setCategoryHidden(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { isHidden: boolean },
+  ) {
+    return this.metricsService.setCategoryHidden(id, !!body.isHidden);
   }
 
   @Delete('categories/:id')
@@ -62,14 +88,18 @@ export class MetricsController {
     @Body()
     body: {
       categoryId: number;
-      sourceType: 'ALIMI' | 'INTERNAL';
+      sourceType?: string;
       metricName: string;
       metricUnit?: string;
       aggregationType?: string;
       displayOrder?: number;
+      parentMetricId?: number | null;
     },
   ) {
-    return this.metricsService.createMetric(body);
+    return this.metricsService.createMetric({
+      ...body,
+      sourceType: parseMetricSourceType(body.sourceType),
+    });
   }
 
   @Put('reorder')
@@ -77,9 +107,36 @@ export class MetricsController {
     @Body()
     body: {
       categories?: { categoryId: number; displayOrder: number }[];
-      metrics?: { metricId: number; categoryId: number; displayOrder: number }[];
+      metrics?: {
+        metricId: number;
+        categoryId: number;
+        displayOrder: number;
+        parentMetricId?: number | null;
+      }[];
     },
   ) {
     return this.metricsService.reorder(body);
+  }
+
+  @Put(':id/hidden')
+  setMetricHidden(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { isHidden: boolean },
+  ) {
+    return this.metricsService.setMetricHidden(id, !!body.isHidden);
+  }
+
+  /** 지표명 변경 (자체 데이터 지표만 허용) */
+  @Put(':id')
+  updateMetric(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { metricName: string },
+  ) {
+    return this.metricsService.updateMetric(id, body);
+  }
+
+  @Delete(':id')
+  deleteMetric(@Param('id', ParseIntPipe) id: number) {
+    return this.metricsService.deleteMetric(id);
   }
 }

@@ -64,7 +64,7 @@ const HUB_ITEMS: HubItem[] = [
   {
     href: '/admin',
     title: '관리자',
-    description: '지표 트리를 구성하고 자체 데이터를 엑셀로 업로드합니다.',
+    description: '지표 DB를 구성하고 자체 데이터를 엑셀로 업로드합니다.',
     icon: Settings,
     roles: ['admin'],
   },

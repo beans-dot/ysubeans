@@ -33,7 +33,7 @@ export interface SelectedTarget {
 export interface SelectedMetric {
   metricId: number;
   metricName: string;
-  sourceType: 'ALIMI' | 'INTERNAL';
+  sourceType: 'ALIMI' | 'INTERNAL' | 'MONITORING';
   unit: string | null;
 }
 
@@ -76,6 +76,11 @@ export interface DashboardState {
   toggleTarget: (t: SelectedTarget) => void;
   applyTargetSelection: (targets: SelectedTarget[], selected: boolean) => void;
   toggleMetric: (m: SelectedMetric) => void;
+  /** 지표 트리 기준으로 선택 목록 정리: 숨김·삭제된 지표 제거, 변경된 지표명 갱신 */
+  syncMetricCatalog: (
+    sourceType: SelectedMetric['sourceType'],
+    available: SelectedMetric[],
+  ) => void;
   clearTargets: () => void;
   clearMetrics: () => void;
   setYears: (years: number[]) => void;
@@ -312,6 +317,32 @@ export function createAnalysisStore(analysisScope: AnalysisScope) {
           ? state.selectedMetrics.filter((x) => x.metricId !== m.metricId)
           : [...state.selectedMetrics, m],
       };
+    }),
+
+  syncMetricCatalog: (sourceType, available) =>
+    set((state) => {
+      const byId = new Map(available.map((m) => [m.metricId, m]));
+      let changed = false;
+      const next: SelectedMetric[] = [];
+      for (const m of state.selectedMetrics) {
+        if (m.sourceType !== sourceType) {
+          next.push(m);
+          continue;
+        }
+        const fresh = byId.get(m.metricId);
+        if (!fresh) {
+          // 숨김 처리되거나 삭제된 지표
+          changed = true;
+          continue;
+        }
+        if (fresh.metricName !== m.metricName || fresh.unit !== m.unit) {
+          changed = true;
+          next.push({ ...m, metricName: fresh.metricName, unit: fresh.unit });
+          continue;
+        }
+        next.push(m);
+      }
+      return changed ? { selectedMetrics: next } : {};
     }),
 
   clearTargets: () => set({ selectedTargets: [] }),

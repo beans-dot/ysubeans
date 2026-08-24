@@ -9,6 +9,7 @@ import {
   type DropResult,
 } from '@hello-pangea/dnd';
 import {
+  ArrowRight,
   Check,
   GripVertical,
   Pencil,
@@ -25,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 
 const SERIES_DROPPABLE_ID = 'internal-series';
@@ -110,6 +112,8 @@ export function InternalOrgManager() {
   const [editingDeptPk, setEditingDeptPk] = useState<number | null>(null);
   const [editingDeptName, setEditingDeptName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [moveTargetId, setMoveTargetId] = useState('');
 
   const load = () => {
     api
@@ -117,6 +121,8 @@ export function InternalOrgManager() {
       .then(({ data }) => {
         setTree(data);
         setDirty(false);
+        setSelectedIds(new Set());
+        setMoveTargetId('');
       })
       .catch(() => setTree([]));
   };
@@ -265,6 +271,63 @@ export function InternalOrgManager() {
     }
   };
 
+  const toggleSelect = (deptPk: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(deptPk)) next.delete(deptPk);
+      else next.add(deptPk);
+      return next;
+    });
+  };
+
+  const seriesSelectionState = (
+    s: InternalSeriesNode,
+  ): boolean | 'indeterminate' => {
+    if (s.departments.length === 0) return false;
+    const selectedCount = s.departments.filter((d) =>
+      selectedIds.has(d.deptPk),
+    ).length;
+    if (selectedCount === 0) return false;
+    if (selectedCount === s.departments.length) return true;
+    return 'indeterminate';
+  };
+
+  const toggleSelectSeries = (s: InternalSeriesNode) => {
+    const allSelected = s.departments.every((d) => selectedIds.has(d.deptPk));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const d of s.departments) {
+        if (allSelected) next.delete(d.deptPk);
+        else next.add(d.deptPk);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setMoveTargetId('');
+  };
+
+  const applyMove = (
+    deptPks: number[],
+    destSeriesId: number,
+    destIndex: number,
+  ) => {
+    if (deptPks.length === 0) return;
+    setTree((prev) => moveDepts(prev, deptPks, destSeriesId, destIndex));
+    setDirty(true);
+    clearSelection();
+  };
+
+  const handleBulkMove = () => {
+    if (!moveTargetId || selectedIds.size === 0) return;
+    const destSeriesId = Number(moveTargetId);
+    const dest = tree.find((s) => s.seriesId === destSeriesId);
+    if (!dest) return;
+    applyMove([...selectedIds], destSeriesId, dest.departments.length);
+  };
+
   const onDragEnd = (result: DropResult) => {
     const { source, destination, type } = result;
     if (!destination) return;
@@ -285,26 +348,36 @@ export function InternalOrgManager() {
 
     const destSeriesId = Number(destination.droppableId);
     const draggedId = Number(result.draggableId);
+
+    const idsToMove =
+      selectedIds.has(draggedId) && selectedIds.size > 1
+        ? [...selectedIds]
+        : [draggedId];
+
     let destIndex = destination.index;
-    if (source.droppableId === destination.droppableId) {
+    if (idsToMove.length > 1 && source.droppableId === destination.droppableId) {
       const src = tree.find((s) => String(s.seriesId) === source.droppableId);
       if (src) {
         const removedBefore = src.departments
           .slice(0, destination.index)
-          .filter((d) => d.deptPk === draggedId).length;
+          .filter((d) => idsToMove.includes(d.deptPk)).length;
         destIndex = destination.index - removedBefore;
       }
     }
-    setTree((prev) => moveDepts(prev, [draggedId], destSeriesId, destIndex));
-    setDirty(true);
+
+    applyMove(idsToMove, destSeriesId, destIndex);
   };
 
+  const selectedCount = selectedIds.size;
   const { uncategorized, ordered } = splitTree(tree);
 
   const renderSeriesBody = (
     s: InternalSeriesNode,
     seriesDragHandleProps?: DraggableProvidedDragHandleProps | null,
-  ) => (
+  ) => {
+    const seriesChecked = seriesSelectionState(s);
+
+    return (
     <>
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -317,6 +390,12 @@ export function InternalOrgManager() {
               <GripVertical className="h-4 w-4" />
             </span>
           )}
+          <Checkbox
+            checked={seriesChecked}
+            disabled={s.departments.length === 0}
+            onCheckedChange={() => toggleSelectSeries(s)}
+            aria-label={`${s.seriesName} 전체 선택`}
+          />
           {editingSeriesId === s.seriesId ? (
             <div className="flex min-w-0 flex-1 items-center gap-1">
               <Input
@@ -408,7 +487,9 @@ export function InternalOrgManager() {
               snapshot.isDraggingOver ? 'bg-primary/5' : ''
             }`}
           >
-            {s.departments.map((d, index) => (
+            {s.departments.map((d, index) => {
+              const isSelected = selectedIds.has(d.deptPk);
+              return (
               <Draggable
                 key={d.deptPk}
                 draggableId={String(d.deptPk)}
@@ -418,8 +499,17 @@ export function InternalOrgManager() {
                   <div
                     ref={dragProvided.innerRef}
                     {...dragProvided.draggableProps}
-                    className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-sm"
+                    className={`flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-sm ${
+                      isSelected ? 'border-primary/40 bg-primary/5' : ''
+                    }`}
                   >
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleSelect(d.deptPk)}
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      aria-label={`${d.deptName} 선택`}
+                    />
                     <span
                       {...dragProvided.dragHandleProps}
                       className="flex shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
@@ -506,7 +596,8 @@ export function InternalOrgManager() {
                   </div>
                 )}
               </Draggable>
-            ))}
+            );
+            })}
             {provided.placeholder}
             {s.departments.length === 0 && (
               <div className="py-2 text-center text-xs text-muted-foreground">
@@ -546,7 +637,8 @@ export function InternalOrgManager() {
         </Button>
       </div>
     </>
-  );
+    );
+  };
 
   return (
     <Card>
@@ -562,7 +654,8 @@ export function InternalOrgManager() {
           공시 데이터와 분리되어 있으며, 최초에는 공시 학과·코드를 복사해 둡니다.
           학과명은 바꿔도 코드는 그대로라 이미 올린 자체 데이터가 따라갑니다.
           신설 학과는 <span className="font-mono">INT-0001</span> 형식의 코드가
-          자동 부여됩니다. 계열·학과 순서는 드래그한 뒤 「작업 저장」을 눌러 주세요.
+          자동 부여됩니다. 계열은 왼쪽 손잡이로 순서를 바꾸고, 학과는 드래그하거나
+          체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요.
         </p>
 
         <div className="flex gap-2">
@@ -587,6 +680,37 @@ export function InternalOrgManager() {
             <Plus className="mr-1 h-4 w-4" /> 계열 추가
           </Button>
         </div>
+
+        {selectedCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+            <span className="text-sm font-medium">
+              {selectedCount}개 선택됨
+            </span>
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={moveTargetId}
+              onChange={(e) => setMoveTargetId(e.target.value)}
+              aria-label="이동할 계열"
+            >
+              <option value="">이동할 계열 선택</option>
+              {tree.map((s) => (
+                <option key={s.seriesId} value={String(s.seriesId)}>
+                  {s.seriesName}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              onClick={handleBulkMove}
+              disabled={!moveTargetId}
+            >
+              <ArrowRight className="mr-1 h-4 w-4" /> 선택 이동
+            </Button>
+            <Button size="sm" variant="ghost" onClick={clearSelection}>
+              <X className="mr-1 h-4 w-4" /> 선택 해제
+            </Button>
+          </div>
+        )}
 
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="space-y-4">

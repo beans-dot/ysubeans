@@ -7,6 +7,7 @@ import { AnnualEventsManager } from '@/components/admin/AnnualEventsManager';
 import { InternalOrgManager } from '@/components/admin/InternalOrgManager';
 import { MemberManager } from '@/components/admin/MemberManager';
 import { RawDataCorrection } from '@/components/admin/RawDataCorrection';
+import { StrategicPlanManager } from '@/components/admin/StrategicPlanManager';
 import { TreeBuilder } from '@/components/admin/TreeBuilder';
 import { UploadCenter } from '@/components/admin/UploadCenter';
 import { Button } from '@/components/ui/button';
@@ -51,11 +52,12 @@ export default function AdminPage() {
         <Tabs defaultValue="members">
           <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="members">회원관리</TabsTrigger>
-            <TabsTrigger value="tree">지표 트리 빌더</TabsTrigger>
+            <TabsTrigger value="tree">지표 DB 빌더</TabsTrigger>
             <TabsTrigger value="org">계열·학과 관리</TabsTrigger>
             <TabsTrigger value="upload">엑셀 업로드</TabsTrigger>
             <TabsTrigger value="correction">자체 데이터 교정</TabsTrigger>
             <TabsTrigger value="annual">연간 변동사항 관리</TabsTrigger>
+            <TabsTrigger value="strategic-plan">중장기발전계획</TabsTrigger>
           </TabsList>
           <TabsContent value="members">
             <MemberManager />
@@ -74,6 +76,9 @@ export default function AdminPage() {
           </TabsContent>
           <TabsContent value="annual">
             <AnnualEventsManager />
+          </TabsContent>
+          <TabsContent value="strategic-plan">
+            <StrategicPlanManager />
           </TabsContent>
         </Tabs>
       </div>

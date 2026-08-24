@@ -6,6 +6,8 @@ import {
   BookOpen,
   CheckCircle2,
   Download,
+  FileSpreadsheet,
+  School,
   Search,
   Upload,
 } from 'lucide-react';
@@ -42,12 +44,30 @@ type UploadResult =
     }
   | { status: 'NEED_CONFIRM_LOCKED'; message: string; lockedYears: number[] };
 
-type CodebookTab = 'ysu' | 'univ' | 'dept' | 'metric-alimi' | 'metric-internal';
+type CodebookTab =
+  | 'ysu'
+  | 'univ'
+  | 'dept'
+  | 'metric-alimi'
+  | 'metric-internal'
+  | 'metric-monitoring';
+type TemplateKind = 'empty' | 'campus';
+type UploadMode = 'internal' | 'monitoring';
 
-const TEMPLATE_HEADERS = [
+const TEMPLATE_HEADERS_EMPTY = [
   'year',
   'univ_code',
   'dept_code',
+  'metric_name',
+  'metric_value',
+] as const;
+
+const TEMPLATE_HEADERS_CAMPUS = [
+  'year',
+  'univ_code',
+  'univ_name',
+  'dept_code',
+  'dept_name',
   'metric_name',
   'metric_value',
 ] as const;
@@ -68,14 +88,14 @@ const COLUMN_GUIDE: Array<{
     header: 'univ_code',
     required: '필수',
     meaning:
-      '대학 코드. 샘플 양식에는 연성대학교 코드가 기본 입력됩니다. 타 대학은 코드북을 참고하세요.',
+      '대학 코드. 빈 양식·교내 데이터 양식 모두 연성대학교 코드가 기본 입력됩니다. 타 대학은 코드북을 참고하세요.',
     example: '0002651',
   },
   {
     header: 'dept_code',
     required: '선택',
     meaning:
-      '학과 코드. 샘플 양식에 연성대 활성 학과가 나열됩니다. 대학 전체 지표는 _ALL_ 을 사용합니다.',
+      '학과 코드. 양식에 연성대 자체 편제 학과가 나열됩니다. 대학 전체 지표는 _ALL_ 을 사용합니다.',
     example: '_ALL_',
   },
   {
@@ -107,25 +127,57 @@ async function fetchMetricCodebook(): Promise<MetricCodebook> {
 function buildUploadTemplateWorkbook(
   codebook: UniversityCodebook,
   metrics: MetricCodebookEntry[],
+  kind: TemplateKind,
+  mode: UploadMode = 'internal',
 ) {
   const year = codebook.referenceYear;
   const { univCode, univName, departments } = codebook.yeonsung;
+  const campusUnivName = univName || '연성대학교';
 
-  const dataRows: Array<Array<string | number>> = [
-    [...TEMPLATE_HEADERS],
-    [year, univCode, '_ALL_', '', ''],
-    ...departments.map((d) => [year, univCode, d.deptCode, '', ''] as Array<
-      string | number
-    >),
-  ];
+  const dataRows: Array<Array<string | number>> =
+    kind === 'campus'
+      ? [
+          [...TEMPLATE_HEADERS_CAMPUS],
+          [year, univCode, campusUnivName, '_ALL_', '대학 전체', '', ''],
+          ...departments.map(
+            (d) =>
+              [
+                year,
+                univCode,
+                campusUnivName,
+                d.deptCode,
+                d.deptName,
+                '',
+                '',
+              ] as Array<string | number>,
+          ),
+        ]
+      : [
+          [...TEMPLATE_HEADERS_EMPTY],
+          [year, univCode, '_ALL_', '', ''],
+          ...departments.map((d) => [year, univCode, d.deptCode, '', ''] as Array<
+            string | number
+          >),
+        ];
   const dataSheet = XLSX.utils.aoa_to_sheet(dataRows);
-  dataSheet['!cols'] = [
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 16 },
-    { wch: 28 },
-    { wch: 14 },
-  ];
+  dataSheet['!cols'] =
+    kind === 'campus'
+      ? [
+          { wch: 10 },
+          { wch: 14 },
+          { wch: 16 },
+          { wch: 16 },
+          { wch: 28 },
+          { wch: 28 },
+          { wch: 14 },
+        ]
+      : [
+          { wch: 10 },
+          { wch: 14 },
+          { wch: 16 },
+          { wch: 28 },
+          { wch: 14 },
+        ];
 
   const ysuSheet = XLSX.utils.aoa_to_sheet([
     ['univ_code', 'univ_name', 'dept_code', 'dept_name', 'series_lg', '비고'],
@@ -150,11 +202,15 @@ function buildUploadTemplateWorkbook(
 
   const alimiMetrics = metrics.filter((m) => m.sourceType === 'ALIMI');
   const internalMetrics = metrics.filter((m) => m.sourceType === 'INTERNAL');
+  const monitoringMetrics = metrics.filter(
+    (m) => m.sourceType === 'MONITORING',
+  );
   const metricHeaders = [
     'metric_id',
     'metric_name',
     'source',
     'category_name',
+    'parent_metric_name',
     'metric_unit',
   ];
   const toMetricRow = (m: MetricCodebookEntry) => [
@@ -162,6 +218,7 @@ function buildUploadTemplateWorkbook(
     m.metricName,
     m.sourceLabel,
     m.categoryName,
+    m.parentMetricName ?? '',
     m.metricUnit ?? '',
   ];
 
@@ -174,6 +231,7 @@ function buildUploadTemplateWorkbook(
     { wch: 36 },
     { wch: 8 },
     { wch: 20 },
+    { wch: 24 },
     { wch: 12 },
   ];
 
@@ -186,34 +244,77 @@ function buildUploadTemplateWorkbook(
     { wch: 36 },
     { wch: 8 },
     { wch: 20 },
+    { wch: 24 },
     { wch: 12 },
   ];
 
+  const monitoringSheet = XLSX.utils.aoa_to_sheet([
+    metricHeaders,
+    ...monitoringMetrics.map(toMetricRow),
+  ]);
+  monitoringSheet['!cols'] = internalSheet['!cols'];
+
+  const campusGuide =
+    kind === 'campus'
+      ? [
+          ['univ_name', '표시용', 'univ_code에 대응하는 대학명. 업로드 시 무시됩니다.', campusUnivName],
+          ['dept_name', '표시용', 'dept_code에 대응하는 학과명. 업로드 시 무시됩니다.', '컴퓨터소프트웨어과'],
+        ]
+      : [];
+  const guideNotes =
+    kind === 'campus'
+      ? [
+          [
+            `교내 데이터 양식은 ${campusUnivName}(${univCode}) 전용입니다. 당해 연도(${year}) 기준 자체 편제 학과를 미리 채웁니다.`,
+          ],
+          [
+            'univ_name, dept_name 열은 식별용 더미입니다. 업로드 시 무시되며, 적재는 univ_code / dept_code만 사용합니다.',
+          ],
+          [
+            'metric_name / metric_value 만 입력하면 됩니다. 둘 다 비어 있는 행은 업로드 시 건너뜁니다.',
+          ],
+          [
+            mode === 'monitoring'
+              ? '지표명을 바꾼 뒤에는 이 양식을 다시 받으세요. 「지표코드(모니터링)」시트의 현재 metric_id–metric_name을 복사하세요. 예전 이름으로 올리면 신규 지표가 생깁니다. 수입·지출처럼 이름이 겹치면 metric_id를 함께 넣으세요.'
+              : '지표명을 바꾼 뒤에는 이 양식을 다시 받으세요. 「지표코드(자체)」시트의 현재 metric_id–metric_name을 복사하세요. 예전 이름으로 올리면 신규 지표가 생깁니다.',
+          ],
+          [
+            '첫 행에서 year/univ_code/dept_code/metric_name/metric_value 헤더만 처리합니다. univ_name·dept_name·메모 등 기타 열은 무시됩니다.',
+          ],
+        ]
+      : [
+          [
+            `업로드양식 시트는 ${univName}(${univCode})의 당해 연도(${year}) 기준 활성 학과를 미리 채웁니다.`,
+          ],
+          [
+            'metric_name / metric_value 만 입력하면 됩니다. 둘 다 비어 있는 행은 업로드 시 건너뜁니다.',
+          ],
+          [
+            '기존 지표는 「지표코드(공시)」「지표코드(자체)」시트의 metric_name을 그대로 복사하세요. 오타·띄어쓰기는 신규 지표로 등록됩니다.',
+          ],
+          [
+            '첫 행 헤더가 year/univ_code/dept_code/metric_name/metric_value 인 열만 처리합니다. 메모·비고 등 기타 열은 무시됩니다.',
+          ],
+        ];
   const guideSheet = XLSX.utils.aoa_to_sheet([
     ['컬럼명', '필수여부', '설명', '예시'],
     ...COLUMN_GUIDE.map((c) => [c.header, c.required, c.meaning, c.example]),
+    ...campusGuide,
     [],
     ['참고'],
-    [
-      `업로드양식 시트는 ${univName}(${univCode})의 당해 연도(${year}) 기준 활성 학과를 미리 채웁니다.`,
-    ],
-    [
-      'metric_name / metric_value 만 입력하면 됩니다. 둘 다 비어 있는 행은 업로드 시 건너뜁니다.',
-    ],
-    [
-      '기존 지표는 「지표코드(공시)」「지표코드(자체)」시트의 metric_name을 그대로 복사하세요. 오타·띄어쓰기는 신규 지표로 등록됩니다.',
-    ],
-    [
-      '첫 행 헤더가 year/univ_code/dept_code/metric_name/metric_value 인 열만 처리합니다. 메모·비고 등 기타 열은 무시됩니다.',
-    ],
+    ...guideNotes,
   ]);
   guideSheet['!cols'] = [{ wch: 14 }, { wch: 10 }, { wch: 80 }, { wch: 28 }];
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, dataSheet, '업로드양식');
   XLSX.utils.book_append_sheet(workbook, ysuSheet, '연성대학과목록');
-  XLSX.utils.book_append_sheet(workbook, alimiSheet, '지표코드(공시)');
-  XLSX.utils.book_append_sheet(workbook, internalSheet, '지표코드(자체)');
+  if (mode === 'monitoring') {
+    XLSX.utils.book_append_sheet(workbook, monitoringSheet, '지표코드(모니터링)');
+  } else {
+    XLSX.utils.book_append_sheet(workbook, alimiSheet, '지표코드(공시)');
+    XLSX.utils.book_append_sheet(workbook, internalSheet, '지표코드(자체)');
+  }
   XLSX.utils.book_append_sheet(workbook, guideSheet, '컬럼설명');
   return workbook;
 }
@@ -221,6 +322,7 @@ function buildUploadTemplateWorkbook(
 function buildCodebookWorkbook(
   codebook: UniversityCodebook,
   metricCodebook: MetricCodebook,
+  mode: UploadMode = 'internal',
 ) {
   const univSheet = XLSX.utils.aoa_to_sheet([
     ['univ_code', 'univ_name', 'school_type', 'region_type', 'region_city'],
@@ -264,11 +366,15 @@ function buildCodebookWorkbook(
   const internalMetrics = metricCodebook.metrics.filter(
     (m) => m.sourceType === 'INTERNAL',
   );
+  const monitoringMetrics = metricCodebook.metrics.filter(
+    (m) => m.sourceType === 'MONITORING',
+  );
   const metricHeaders = [
     'metric_id',
     'metric_name',
     'source',
     'category_name',
+    'parent_metric_name',
     'metric_unit',
   ];
   const toMetricRow = (m: MetricCodebookEntry) => [
@@ -276,6 +382,7 @@ function buildCodebookWorkbook(
     m.metricName,
     m.sourceLabel,
     m.categoryName,
+    m.parentMetricName ?? '',
     m.metricUnit ?? '',
   ];
 
@@ -288,6 +395,7 @@ function buildCodebookWorkbook(
     { wch: 36 },
     { wch: 8 },
     { wch: 20 },
+    { wch: 24 },
     { wch: 12 },
   ];
 
@@ -300,39 +408,103 @@ function buildCodebookWorkbook(
     { wch: 36 },
     { wch: 8 },
     { wch: 20 },
+    { wch: 24 },
     { wch: 12 },
   ];
 
-  const metaSheet = XLSX.utils.aoa_to_sheet([
-    ['항목', '값'],
-    ['생성시각(UTC)', codebook.generatedAt],
-    ['기준연도(알리미 배치 당해)', codebook.referenceYear],
-    ['대학 수', codebook.universities.length],
-    ['활성 학과 수', codebook.departments.length],
-    ['공시 지표 수', alimiMetrics.length],
-    ['자체 지표 수', internalMetrics.length],
-    [
-      '연성대',
-      `${codebook.yeonsung.univName} (${codebook.yeonsung.univCode}) / 학과 ${codebook.yeonsung.departments.length}개`,
-    ],
-    [],
-    [
-      '안내',
-      '대학·학과·지표 코드는 DB 실시간 조회입니다. 기존 지표 업로드 시 「지표코드」시트의 metric_name을 그대로 복사하세요.',
-    ],
+  const monitoringSheet = XLSX.utils.aoa_to_sheet([
+    metricHeaders,
+    ...monitoringMetrics.map(toMetricRow),
   ]);
+  monitoringSheet['!cols'] = internalSheet['!cols'];
+
+  const metaSheet = XLSX.utils.aoa_to_sheet(
+    mode === 'monitoring'
+      ? [
+          ['항목', '값'],
+          ['생성시각(UTC)', codebook.generatedAt],
+          ['기준연도', codebook.referenceYear],
+          ['모니터링 지표 수', monitoringMetrics.length],
+          [
+            '연성대',
+            `${codebook.yeonsung.univName} (${codebook.yeonsung.univCode}) / 학과 ${codebook.yeonsung.departments.length}개`,
+          ],
+          [],
+          [
+            '안내',
+            '지표 코드북은 현재 DB의 metric_id–metric_name입니다. 지표 DB 빌더에서 이름을 바꾼 뒤에도 이 파일을 다시 받으면 최신 매핑이 들어갑니다. 업로드 시 현재 metric_name을 쓰고, 이름이 겹치면 metric_id를 함께 넣으세요.',
+          ],
+        ]
+      : [
+          ['항목', '값'],
+          ['생성시각(UTC)', codebook.generatedAt],
+          ['기준연도(알리미 배치 당해)', codebook.referenceYear],
+          ['대학 수', codebook.universities.length],
+          ['활성 학과 수', codebook.departments.length],
+          ['공시 지표 수', alimiMetrics.length],
+          ['자체 지표 수', internalMetrics.length],
+          [
+            '연성대',
+            `${codebook.yeonsung.univName} (${codebook.yeonsung.univCode}) / 학과 ${codebook.yeonsung.departments.length}개`,
+          ],
+          [],
+          [
+            '안내',
+            '대학·학과·지표 코드는 DB 실시간 조회입니다. 지표 DB 빌더에서 지표명을 바꾼 뒤에도 이 파일을 다시 받으면 최신 metric_id–metric_name이 들어갑니다.',
+          ],
+        ],
+  );
   metaSheet['!cols'] = [{ wch: 28 }, { wch: 90 }];
+
+  const ysuDeptSheet = XLSX.utils.aoa_to_sheet([
+    ['univ_code', 'univ_name', 'dept_code', 'dept_name', 'series_lg'],
+    [
+      codebook.yeonsung.univCode,
+      codebook.yeonsung.univName,
+      '_ALL_',
+      '대학 전체',
+      '',
+    ],
+    ...codebook.yeonsung.departments.map((d) => [
+      codebook.yeonsung.univCode,
+      codebook.yeonsung.univName,
+      d.deptCode,
+      d.deptName,
+      d.seriesLg ?? '',
+    ]),
+  ]);
+  ysuDeptSheet['!cols'] = [
+    { wch: 12 },
+    { wch: 24 },
+    { wch: 14 },
+    { wch: 28 },
+    { wch: 14 },
+  ];
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, metaSheet, '안내');
-  XLSX.utils.book_append_sheet(workbook, univSheet, '대학코드');
-  XLSX.utils.book_append_sheet(workbook, deptSheet, '학과코드');
-  XLSX.utils.book_append_sheet(workbook, alimiSheet, '지표코드(공시)');
-  XLSX.utils.book_append_sheet(workbook, internalSheet, '지표코드(자체)');
+  if (mode === 'monitoring') {
+    XLSX.utils.book_append_sheet(workbook, ysuDeptSheet, '연성대학과목록');
+    XLSX.utils.book_append_sheet(workbook, monitoringSheet, '지표코드(모니터링)');
+  } else {
+    XLSX.utils.book_append_sheet(workbook, univSheet, '대학코드');
+    XLSX.utils.book_append_sheet(workbook, deptSheet, '학과코드');
+    XLSX.utils.book_append_sheet(workbook, alimiSheet, '지표코드(공시)');
+    XLSX.utils.book_append_sheet(workbook, internalSheet, '지표코드(자체)');
+  }
   return workbook;
 }
 
 export function UploadCenter() {
+  return (
+    <div className="space-y-6">
+      <ExcelUploadPanel mode="internal" />
+      <ExcelUploadPanel mode="monitoring" />
+    </div>
+  );
+}
+
+function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -343,6 +515,7 @@ export function UploadCenter() {
   const [downloading, setDownloading] = useState<'template' | 'codebook' | null>(
     null,
   );
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [codebookOpen, setCodebookOpen] = useState(false);
   const [codebook, setCodebook] = useState<UniversityCodebook | null>(null);
   const [metricCodebook, setMetricCodebook] = useState<MetricCodebook | null>(
@@ -364,7 +537,10 @@ export function UploadCenter() {
       const form = new FormData();
       form.append('file', file);
       const { data } = await api.post<UploadResult>('/upload/excel', form, {
-        params: opts,
+        params: {
+          ...opts,
+          sourceType: mode === 'monitoring' ? 'MONITORING' : 'INTERNAL',
+        },
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setResult(data);
@@ -388,7 +564,8 @@ export function UploadCenter() {
     doUpload({ confirmOverwrite: false, confirmLocked: false });
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleDownloadTemplate = async (kind: TemplateKind) => {
+    setTemplatePickerOpen(false);
     setDownloading('template');
     setError(null);
     try {
@@ -396,10 +573,19 @@ export function UploadCenter() {
         fetchUnivCodebook(),
         fetchMetricCodebook(),
       ]);
-      const wb = buildUploadTemplateWorkbook(univ, metrics.metrics);
+      const wb = buildUploadTemplateWorkbook(
+        univ,
+        metrics.metrics,
+        kind,
+        mode,
+      );
       XLSX.writeFile(
         wb,
-        `ysu-ir-upload-template-${univ.referenceYear}.xlsx`,
+        mode === 'monitoring'
+          ? `ysu-ir-monitoring-upload-template-${univ.referenceYear}.xlsx`
+          : kind === 'campus'
+            ? `ysu-ir-upload-campus-template-${univ.referenceYear}.xlsx`
+            : `ysu-ir-upload-template-${univ.referenceYear}.xlsx`,
       );
     } catch {
       setError('샘플 양식 생성 실패 (코드 조회 오류)');
@@ -416,8 +602,13 @@ export function UploadCenter() {
         fetchUnivCodebook(),
         fetchMetricCodebook(),
       ]);
-      const wb = buildCodebookWorkbook(univ, metrics);
-      XLSX.writeFile(wb, `ysu-ir-codebook-${univ.referenceYear}.xlsx`);
+      const wb = buildCodebookWorkbook(univ, metrics, mode);
+      XLSX.writeFile(
+        wb,
+        mode === 'monitoring'
+          ? `ysu-ir-monitoring-codebook-${univ.referenceYear}.xlsx`
+          : `ysu-ir-codebook-${univ.referenceYear}.xlsx`,
+      );
     } catch {
       setError('코드북 다운로드 실패');
     } finally {
@@ -485,7 +676,11 @@ export function UploadCenter() {
   const filteredMetrics = useMemo(() => {
     if (!metricCodebook) return [];
     const sourceType =
-      codebookTab === 'metric-alimi' ? 'ALIMI' : 'INTERNAL';
+      codebookTab === 'metric-alimi'
+        ? 'ALIMI'
+        : codebookTab === 'metric-monitoring'
+          ? 'MONITORING'
+          : 'INTERNAL';
     const source = metricCodebook.metrics.filter(
       (m) => m.sourceType === sourceType,
     );
@@ -508,10 +703,19 @@ export function UploadCenter() {
     metricCodebook?.metrics.filter((m) => m.sourceType === 'INTERNAL').length ??
     0;
 
+  const monitoringCount =
+    metricCodebook?.metrics.filter((m) => m.sourceType === 'MONITORING')
+      .length ?? 0;
+  const isMonitoring = mode === 'monitoring';
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>자체 데이터 엑셀 업로드</CardTitle>
+        <CardTitle>
+          {isMonitoring
+            ? '모니터링 데이터 업로드'
+            : '자체 데이터 엑셀 업로드'}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2 text-sm text-muted-foreground">
@@ -521,16 +725,37 @@ export function UploadCenter() {
               year, univ_code, dept_code, metric_name, metric_value
             </code>
           </p>
-          <p>
-            샘플 양식은 DB의 연성대 <code>univ_code</code>와 활성{' '}
-            <code>dept_code</code>를 미리 채웁니다. 기존 지표는 코드북의{' '}
-            <code>metric_name</code>을 그대로 복사하세요.
-          </p>
-          <p>
-            신규 <code>metric_name</code>은 「분류없음」에 자체 지표로 등록되며,{' '}
-            <code>metric_id</code>는 시스템이 자동 할당합니다. 양식 헤더 외
-            열(메모 등)은 무시됩니다.
-          </p>
+          {isMonitoring ? (
+            <>
+              <p>
+                대학주요모니터링 전용입니다. 양식·코드북은 연성대학교 학과(계열)
+                편제와 모니터링 지표만 포함합니다. 교내 데이터 양식과 같이{' '}
+                <code>univ_code</code> 옆에 대학명, <code>dept_code</code> 옆에
+                학과명이 붙습니다. 한글 열은 업로드 시 무시됩니다.
+              </p>
+              <p>
+                기존 지표는 모니터링 코드북의 <code>metric_name</code>을 그대로
+                복사하세요. 수입·지출처럼 이름이 겹치면 <code>metric_id</code>를
+                함께 넣으세요. 신규 이름은 모니터링 「분류없음」으로 등록됩니다.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                「양식 다운로드」에서 빈 양식 또는 교내 데이터 양식을 고를 수
+                있습니다. 빈 양식은 코드만 채운 기존 형식입니다. 교내 데이터
+                양식은 연성대학교 전용이며 <code>univ_code</code> 옆에 대학명,{' '}
+                <code>dept_code</code> 옆에 학과명이 붙습니다. 한글 열은 업로드
+                시 무시됩니다.
+              </p>
+              <p>
+                기존 지표는 코드북의 <code>metric_name</code>을 그대로
+                복사하세요. 신규 <code>metric_name</code>은 「분류없음」에 자체
+                지표로 등록되며, <code>metric_id</code>는 시스템이 자동
+                할당합니다.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="rounded-md border bg-muted/30 p-3">
@@ -542,6 +767,16 @@ export function UploadCenter() {
                 <span className="mx-1">({c.required})</span>— {c.meaning}
               </li>
             ))}
+            <li>
+              <span className="font-bold text-foreground">univ_name</span>
+              <span className="mx-1">(표시용)</span>— 교내 데이터 양식에서
+              univ_code 우측. 연성대학교. 업로드 시 무시됩니다.
+            </li>
+            <li>
+              <span className="font-bold text-foreground">dept_name</span>
+              <span className="mx-1">(표시용)</span>— 교내 데이터 양식에서
+              dept_code 우측. 코드에 대응하는 학과명. 업로드 시 무시됩니다.
+            </li>
           </ul>
         </div>
 
@@ -549,13 +784,15 @@ export function UploadCenter() {
           <Button
             type="button"
             variant="outline"
-            onClick={handleDownloadTemplate}
+            onClick={() =>
+              isMonitoring
+                ? void handleDownloadTemplate('campus')
+                : setTemplatePickerOpen(true)
+            }
             disabled={!!downloading}
           >
             <Download className="mr-1 h-4 w-4" />
-            {downloading === 'template'
-              ? '양식 생성 중…'
-              : '샘플 빈 양식 다운로드'}
+            {downloading === 'template' ? '양식 생성 중…' : '양식 다운로드'}
           </Button>
           <Button
             type="button"
@@ -665,20 +902,70 @@ export function UploadCenter() {
         )}
       </CardContent>
 
+      <Dialog open={templatePickerOpen} onOpenChange={setTemplatePickerOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>양식 다운로드</DialogTitle>
+            <DialogDescription>
+              받을 양식을 선택하세요. 두 양식 모두 업로드 시 인식하는 열은
+              year, univ_code, dept_code, metric_name, metric_value 입니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <button
+              type="button"
+              className="flex items-start gap-3 rounded-md border p-4 text-left transition-colors hover:bg-accent"
+              disabled={!!downloading}
+              onClick={() => void handleDownloadTemplate('empty')}
+            >
+              <FileSpreadsheet className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+              <span>
+                <span className="block font-bold text-foreground">빈 양식</span>
+                <span className="mt-1 block text-sm text-muted-foreground">
+                  기존과 동일합니다. 코드만 채워져 있고 지표값은 비어 있습니다.
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="flex items-start gap-3 rounded-md border p-4 text-left transition-colors hover:bg-accent"
+              disabled={!!downloading}
+              onClick={() => void handleDownloadTemplate('campus')}
+            >
+              <School className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+              <span>
+                <span className="block font-bold text-foreground">
+                  교내 데이터 양식
+                </span>
+                <span className="mt-1 block text-sm text-muted-foreground">
+                  연성대학교 전용입니다. univ_code 옆에 대학명(연성대학교),
+                  dept_code 옆에 학과명이 붙습니다. 한글 열은 업로드 시
+                  무시됩니다.
+                </span>
+              </span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={codebookOpen} onOpenChange={setCodebookOpen}>
         <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
           <DialogHeader>
-            <DialogTitle>대학·학과·지표 코드북</DialogTitle>
+            <DialogTitle>
+              {isMonitoring
+                ? '연성대 모니터링 코드북'
+                : '대학·학과·지표 코드북'}
+            </DialogTitle>
             <DialogDescription>
-              DB 실시간 조회입니다. 기존 지표는 metric_name을 그대로 복사해
-              업로드하세요.
+              {isMonitoring
+                ? '연성대학교 학과와 모니터링 지표만 보여 줍니다. metric_name을 그대로 복사해 업로드하세요.'
+                : 'DB 실시간 조회입니다. 기존 지표는 metric_name을 그대로 복사해 업로드하세요.'}
               {codebook && metricCodebook && (
                 <>
                   {' '}
-                  기준연도 {codebook.referenceYear} · 대학{' '}
-                  {codebook.universities.length} · 학과{' '}
-                  {codebook.departments.length} · 공시 {alimiCount} · 자체{' '}
-                  {internalCount}
+                  {isMonitoring
+                    ? `기준연도 ${codebook.referenceYear} · 연성대 학과 ${codebook.yeonsung.departments.length} · 모니터링 ${monitoringCount}`
+                    : `기준연도 ${codebook.referenceYear} · 대학 ${codebook.universities.length} · 학과 ${codebook.departments.length} · 공시 ${alimiCount} · 자체 ${internalCount}`}
                 </>
               )}
             </DialogDescription>
@@ -692,36 +979,51 @@ export function UploadCenter() {
             >
               연성대 학과
             </Button>
-            <Button
-              size="sm"
-              variant={codebookTab === 'univ' ? 'default' : 'outline'}
-              onClick={() => setCodebookTab('univ')}
-            >
-              전체 대학
-            </Button>
-            <Button
-              size="sm"
-              variant={codebookTab === 'dept' ? 'default' : 'outline'}
-              onClick={() => setCodebookTab('dept')}
-            >
-              전체 학과
-            </Button>
-            <Button
-              size="sm"
-              variant={codebookTab === 'metric-alimi' ? 'default' : 'outline'}
-              onClick={() => setCodebookTab('metric-alimi')}
-            >
-              지표(공시)
-            </Button>
-            <Button
-              size="sm"
-              variant={
-                codebookTab === 'metric-internal' ? 'default' : 'outline'
-              }
-              onClick={() => setCodebookTab('metric-internal')}
-            >
-              지표(자체)
-            </Button>
+            {!isMonitoring && (
+              <>
+                <Button
+                  size="sm"
+                  variant={codebookTab === 'univ' ? 'default' : 'outline'}
+                  onClick={() => setCodebookTab('univ')}
+                >
+                  전체 대학
+                </Button>
+                <Button
+                  size="sm"
+                  variant={codebookTab === 'dept' ? 'default' : 'outline'}
+                  onClick={() => setCodebookTab('dept')}
+                >
+                  전체 학과
+                </Button>
+                <Button
+                  size="sm"
+                  variant={codebookTab === 'metric-alimi' ? 'default' : 'outline'}
+                  onClick={() => setCodebookTab('metric-alimi')}
+                >
+                  지표(공시)
+                </Button>
+                <Button
+                  size="sm"
+                  variant={
+                    codebookTab === 'metric-internal' ? 'default' : 'outline'
+                  }
+                  onClick={() => setCodebookTab('metric-internal')}
+                >
+                  지표(자체)
+                </Button>
+              </>
+            )}
+            {isMonitoring && (
+              <Button
+                size="sm"
+                variant={
+                  codebookTab === 'metric-monitoring' ? 'default' : 'outline'
+                }
+                onClick={() => setCodebookTab('metric-monitoring')}
+              >
+                지표(모니터링)
+              </Button>
+            )}
             <div className="relative min-w-[200px] flex-1">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -809,7 +1111,8 @@ export function UploadCenter() {
             {!codebookLoading &&
               metricCodebook &&
               (codebookTab === 'metric-alimi' ||
-                codebookTab === 'metric-internal') && (
+                codebookTab === 'metric-internal' ||
+                codebookTab === 'metric-monitoring') && (
                 <table className="w-full text-left text-xs">
                   <thead className="sticky top-0 bg-muted">
                     <tr>
@@ -817,6 +1120,7 @@ export function UploadCenter() {
                       <th className="px-2 py-1.5">metric_name</th>
                       <th className="px-2 py-1.5">구분</th>
                       <th className="px-2 py-1.5">카테고리</th>
+                      <th className="px-2 py-1.5">상위 지표</th>
                       <th className="px-2 py-1.5">단위</th>
                     </tr>
                   </thead>
@@ -827,13 +1131,14 @@ export function UploadCenter() {
                         <td className="px-2 py-1">{m.metricName}</td>
                         <td className="px-2 py-1">{m.sourceLabel}</td>
                         <td className="px-2 py-1">{m.categoryName}</td>
+                        <td className="px-2 py-1">{m.parentMetricName ?? '—'}</td>
                         <td className="px-2 py-1">{m.metricUnit ?? '—'}</td>
                       </tr>
                     ))}
                     {filteredMetrics.length === 0 && (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={6}
                           className="px-2 py-4 text-center text-muted-foreground"
                         >
                           해당 지표가 없습니다.
