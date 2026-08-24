@@ -95,7 +95,7 @@ export function Header() {
                   {item.label}
                 </Link>
               ))}
-              <span className="mx-1 hidden text-sm text-muted-foreground lg:inline">
+              <span className="mx-1 hidden text-sm font-bold text-blue-900 lg:inline">
                 {user.name}
               </span>
               <Button
