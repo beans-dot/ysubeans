@@ -7,6 +7,7 @@ import {
 
 export type UserRole = 'admin' | 'user';
 export type UserStatus = 'pending' | 'approved' | 'rejected';
+export type AffiliationType = '학과' | '부서' | '기타';
 
 @Entity('ir_user')
 export class IrUser {
@@ -21,6 +22,9 @@ export class IrUser {
 
   @Column({ name: 'password_hash', type: 'varchar', length: 200 })
   passwordHash: string;
+
+  @Column({ name: 'affiliation_type', type: 'varchar', length: 20, nullable: true })
+  affiliationType: AffiliationType | null;
 
   @Column({ name: 'department', type: 'varchar', length: 200 })
   department: string;

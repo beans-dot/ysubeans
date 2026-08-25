@@ -53,11 +53,13 @@ function NavButton({
   label,
   active,
   nested,
+  prominent,
   onClick,
 }: {
   label: string;
   active: boolean;
   nested?: boolean;
+  prominent?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -68,6 +70,7 @@ function NavButton({
       className={cn(
         'w-full rounded-md px-3 py-2 text-left text-sm transition-colors',
         nested && 'pl-6',
+        prominent && 'font-bold',
         active
           ? 'bg-primary text-primary-foreground font-bold'
           : 'hover:bg-accent',
@@ -99,6 +102,7 @@ export function PlanNav() {
                 <NavButton
                   label={item.label}
                   active={view === item.id}
+                  prominent
                   onClick={() => setView(item.id)}
                 />
               </li>

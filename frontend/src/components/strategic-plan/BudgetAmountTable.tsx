@@ -70,6 +70,99 @@ function AmountInput({
   );
 }
 
+export function TaskBudgetGrandTotal({
+  taskCode,
+  units,
+  fundSources,
+  year,
+  budgetTotal,
+  settlementTotal,
+}: {
+  taskCode: string;
+  units: Array<{ code: string; name: string }>;
+  fundSources: SpFundSource[];
+  year: number;
+  budgetTotal: number | null;
+  settlementTotal: number | null;
+}) {
+  const budgets = useStrategicPlanStore((s) => s.budgets);
+  const executionRate =
+    budgetTotal !== null && budgetTotal > 0 && settlementTotal !== null
+      ? (settlementTotal / budgetTotal) * 100
+      : null;
+
+  return (
+    <div className="rounded-md border bg-muted/40 p-3">
+      <p className="mb-2 text-sm font-bold">
+        실행과제 총계
+        <span className="ml-2 font-normal">
+          {taskCode} · TASK {units.length}건
+        </span>
+      </p>
+      <table className="w-full text-sm">
+        <thead className="border-b">
+          <tr>
+            <th className="px-2 py-1.5 text-left font-bold">재원</th>
+            <th className="px-2 py-1.5 text-left font-bold">{year} 예산(원)</th>
+            <th className="px-2 py-1.5 text-left font-bold">{year} 결산(원)</th>
+            <th className="px-2 py-1.5 text-left font-bold">집행률</th>
+          </tr>
+        </thead>
+        <tbody>
+          {fundSources.map((fund) => {
+            const b = sumAmounts(
+              units.map((unit) =>
+                parseAmount(
+                  budgets[budgetKey(taskCode, unit.code, fund.fundSourceId)]
+                    ?.budget ?? '',
+                ),
+              ),
+            );
+            const s = sumAmounts(
+              units.map((unit) =>
+                parseAmount(
+                  budgets[budgetKey(taskCode, unit.code, fund.fundSourceId)]
+                    ?.settlement ?? '',
+                ),
+              ),
+            );
+            const rate =
+              b !== null && b > 0 && s !== null ? (s / b) * 100 : null;
+            return (
+              <tr key={fund.fundSourceId} className="border-b last:border-b-0">
+                <td className="px-2 py-1.5">{fund.fundSourceName}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {fmtWon(b)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {fmtWon(s)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+                  {rate === null ? '–' : `${fmt1(rate)}%`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t bg-muted/60 font-bold">
+            <td className="px-2 py-1.5">합계</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">
+              {fmtWon(budgetTotal)}
+            </td>
+            <td className="px-2 py-1.5 text-right tabular-nums">
+              {fmtWon(settlementTotal)}
+            </td>
+            <td className="px-2 py-1.5 text-right tabular-nums">
+              {executionRate === null ? '–' : `${fmt1(executionRate)}%`}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
 export function BudgetAmountTable({
   taskCode,
   unitCode,
@@ -95,14 +188,14 @@ export function BudgetAmountTable({
       : null;
 
   return (
-    <div className="overflow-x-auto">
+    <div>
       {unitName ? (
         <p className="mb-2 text-sm font-bold">
           {unitCode}
           <span className="ml-2 font-normal">{unitName}</span>
         </p>
       ) : null}
-      <table className="w-full min-w-[520px] text-sm">
+      <table className="w-full text-sm">
         <thead className="border-b">
           <tr>
             <th className="px-2 py-1.5 text-left font-bold">재원</th>
@@ -126,26 +219,30 @@ export function BudgetAmountTable({
               <tr key={fund.fundSourceId} className="border-b last:border-b-0">
                 <td className="px-2 py-1.5">{fund.fundSourceName}</td>
                 <td className="px-2 py-1.5 text-right">
-                  <AmountInput
-                    taskCode={taskCode}
-                    unitCode={unitCode}
-                    fundSourceId={fund.fundSourceId}
-                    kind="budget"
-                    value={row.budget}
-                    label={`${unitName ?? unitCode} ${fund.fundSourceName} ${year} 예산`}
-                    readOnly={readOnly}
-                  />
+                  <div className="flex justify-end">
+                    <AmountInput
+                      taskCode={taskCode}
+                      unitCode={unitCode}
+                      fundSourceId={fund.fundSourceId}
+                      kind="budget"
+                      value={row.budget}
+                      label={`${unitName ?? unitCode} ${fund.fundSourceName} ${year} 예산`}
+                      readOnly={readOnly}
+                    />
+                  </div>
                 </td>
                 <td className="px-2 py-1.5 text-right">
-                  <AmountInput
-                    taskCode={taskCode}
-                    unitCode={unitCode}
-                    fundSourceId={fund.fundSourceId}
-                    kind="settlement"
-                    value={row.settlement}
-                    label={`${unitName ?? unitCode} ${fund.fundSourceName} ${year} 결산`}
-                    readOnly={readOnly}
-                  />
+                  <div className="flex justify-end">
+                    <AmountInput
+                      taskCode={taskCode}
+                      unitCode={unitCode}
+                      fundSourceId={fund.fundSourceId}
+                      kind="settlement"
+                      value={row.settlement}
+                      label={`${unitName ?? unitCode} ${fund.fundSourceName} ${year} 결산`}
+                      readOnly={readOnly}
+                    />
+                  </div>
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                   {rate === null ? '–' : `${fmt1(rate)}%`}

@@ -27,7 +27,11 @@ api.interceptors.response.use(
     if (!isServer && error?.response?.status === 401) {
       const url = String(error?.config?.url || '');
       // 로그인/회원가입 실패는 세션 정리하지 않음
-      if (!url.includes('/auth/login') && !url.includes('/auth/register')) {
+      if (
+        !url.includes('/auth/login') &&
+        !url.includes('/auth/register') &&
+        !url.includes('/auth/affiliation-options')
+      ) {
         clearAuthCookies();
       }
     }
@@ -199,10 +203,60 @@ export interface MetricCodebook {
 
 export type MemberStatus = 'pending' | 'approved' | 'rejected';
 
+export type AffiliationType = '학과' | '부서' | '기타';
+
+export interface AffiliationMajorOption {
+  deptName: string;
+  seriesName: string;
+}
+
+export interface AffiliationOfficeOption {
+  deptName: string;
+}
+
+export interface AffiliationOptions {
+  majors: AffiliationMajorOption[];
+  offices: AffiliationOfficeOption[];
+}
+
+export async function fetchAffiliationOptions() {
+  const { data } = await api.get<AffiliationOptions>(
+    '/auth/affiliation-options',
+  );
+  return data;
+}
+
+export function formatAffiliation(
+  affiliationType: AffiliationType | null | undefined,
+  department: string,
+) {
+  if (!affiliationType) return department;
+  return `${affiliationType} · ${department}`;
+}
+
+export function inferAffiliationType(
+  savedType: AffiliationType | null | undefined,
+  department: string,
+  options: AffiliationOptions,
+): AffiliationType | '' {
+  const inMajors = options.majors.some((m) => m.deptName === department);
+  const inOffices = options.offices.some((o) => o.deptName === department);
+
+  if (savedType === '학과') return inMajors ? '학과' : department ? '기타' : '학과';
+  if (savedType === '부서') return inOffices ? '부서' : department ? '기타' : '부서';
+  if (savedType === '기타') return '기타';
+
+  if (inMajors) return '학과';
+  if (inOffices) return '부서';
+  if (department) return '기타';
+  return '';
+}
+
 export interface MemberSummary {
   id: string;
   name: string;
   email: string;
+  affiliationType: AffiliationType | null;
   department: string;
   extension: string;
   role: 'admin' | 'user';

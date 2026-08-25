@@ -132,6 +132,7 @@ interface StrategicPlanState {
     kind: 'budget' | 'settlement',
     value: string,
   ) => void;
+  copyPreviousYearBudgets: () => Promise<void>;
   setKpiResult: (kpiCode: string, value: string) => void;
   patchVision: (partial: Partial<SpVision>) => void;
 }
@@ -382,6 +383,46 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
         set((s) => ({ pendingSaves: Math.max(0, s.pendingSaves - 1) }));
       }
     });
+  },
+
+  copyPreviousYearBudgets: async () => {
+    const { year, fundSources } = get();
+    const prevYear = year - 1;
+    set({ saveError: null });
+    set((s) => ({ pendingSaves: s.pendingSaves + 1 }));
+    try {
+      const prev = await fetchSpBudgets(prevYear);
+      const activeIds = new Set(fundSources.map((f) => f.fundSourceId));
+      const toCopy = prev.filter(
+        (b) => b.budgetAmount !== null && activeIds.has(b.fundSourceId),
+      );
+      if (toCopy.length === 0) {
+        set({
+          saveError: `${prevYear}학년도 예산이 없어 복사하지 못했습니다.`,
+        });
+        return;
+      }
+      const next = { ...get().budgets };
+      await Promise.all(
+        toCopy.map(async (b) => {
+          const key = budgetKey(b.taskCode, b.subtaskCode, b.fundSourceId);
+          const current = next[key] ?? { budget: '', settlement: '' };
+          next[key] = { ...current, budget: String(b.budgetAmount) };
+          await saveSpBudget({
+            taskCode: b.taskCode,
+            subtaskCode: b.subtaskCode,
+            year,
+            fundSourceId: b.fundSourceId,
+            budgetAmount: b.budgetAmount,
+          });
+        }),
+      );
+      set({ budgets: next, saveError: null });
+    } catch {
+      set({ saveError: '전년도 예산을 복사하지 못했습니다.' });
+    } finally {
+      set((s) => ({ pendingSaves: Math.max(0, s.pendingSaves - 1) }));
+    }
   },
 
   setKpiResult: (kpiCode, value) => {

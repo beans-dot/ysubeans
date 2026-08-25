@@ -23,7 +23,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { api } from '@/lib/api';
+import { AffiliationFields } from '@/components/auth/AffiliationFields';
+import {
+  api,
+  type AffiliationOptions,
+  type AffiliationType,
+} from '@/lib/api';
 import { homePathForRole, isYeonsungEmail } from '@/lib/auth';
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -48,7 +53,13 @@ export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [affiliationType, setAffiliationType] = useState<
+    AffiliationType | ''
+  >('');
   const [department, setDepartment] = useState('');
+  const [affiliationOptions, setAffiliationOptions] =
+    useState<AffiliationOptions | null>(null);
+  const [affiliationLoading, setAffiliationLoading] = useState(true);
   const [extension, setExtension] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -57,6 +68,28 @@ export default function SignupPage() {
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setAffiliationLoading(true);
+      try {
+        const { data } = await api.get<AffiliationOptions>(
+          '/auth/affiliation-options',
+        );
+        if (!cancelled) setAffiliationOptions(data);
+      } catch {
+        if (!cancelled) {
+          setError('소속 목록을 불러오지 못했습니다.');
+        }
+      } finally {
+        if (!cancelled) setAffiliationLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (hydrated && user) {
@@ -80,6 +113,14 @@ export default function SignupPage() {
       setError('비밀번호는 6자 이상이어야 합니다.');
       return;
     }
+    if (!affiliationType) {
+      setError('소속 유형을 선택해 주세요.');
+      return;
+    }
+    if (!department.trim()) {
+      setError('소속을 선택하거나 입력해 주세요.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -89,6 +130,7 @@ export default function SignupPage() {
         email,
         password,
         passwordConfirm,
+        affiliationType,
         department,
         extension,
       });
@@ -177,15 +219,15 @@ export default function SignupPage() {
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="signup-department">소속부서</Label>
-              <Input
-                id="signup-department"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                required
-              />
-            </div>
+            <AffiliationFields
+              idPrefix="signup"
+              affiliationType={affiliationType}
+              department={department}
+              options={affiliationOptions}
+              loading={affiliationLoading}
+              onAffiliationTypeChange={setAffiliationType}
+              onDepartmentChange={setDepartment}
+            />
             <div className="space-y-2">
               <Label htmlFor="signup-extension">내선번호</Label>
               <Input

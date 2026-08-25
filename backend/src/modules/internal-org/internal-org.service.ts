@@ -221,6 +221,34 @@ export class InternalOrgService {
     });
   }
 
+  /** 회원가입·회원정보 소속(학과) 드롭다운용. 계열 순서를 유지한다. */
+  async listAffiliationMajors(): Promise<
+    Array<{ deptName: string; seriesName: string }>
+  > {
+    await this.ensureSeeded();
+    const series = await this.seriesRepo.find({
+      where: { univCode: this.ysuCode },
+      order: { displayOrder: 'ASC', seriesId: 'ASC' },
+    });
+    const depts = await this.deptRepo.find({
+      where: { univCode: this.ysuCode },
+      order: { displayOrder: 'ASC', deptPk: 'ASC' },
+    });
+    const orderedSeries = [...series].sort((a, b) => {
+      if (this.isUncategorized(a) && !this.isUncategorized(b)) return -1;
+      if (!this.isUncategorized(a) && this.isUncategorized(b)) return 1;
+      return a.displayOrder - b.displayOrder || a.seriesId - b.seriesId;
+    });
+    return orderedSeries.flatMap((s) =>
+      depts
+        .filter((d) => d.seriesId === s.seriesId && d.deptName.trim())
+        .map((d) => ({
+          deptName: d.deptName,
+          seriesName: s.seriesName,
+        })),
+    );
+  }
+
   async listYeonsungDeptsForCodebook(): Promise<
     Array<{ deptCode: string; deptName: string; seriesLg: string | null }>
   > {

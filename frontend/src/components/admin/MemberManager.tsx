@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   api,
+  formatAffiliation,
   type LoginLogEntry,
   type MemberStatus,
   type MemberSummary,
@@ -282,8 +283,13 @@ export function MemberManager() {
                   <dd className="font-medium">{detailUser.email}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">소속부서</dt>
-                  <dd className="font-medium">{detailUser.department}</dd>
+                  <dt className="text-muted-foreground">소속</dt>
+                  <dd className="font-medium">
+                    {formatAffiliation(
+                      detailUser.affiliationType,
+                      detailUser.department,
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">내선번호</dt>

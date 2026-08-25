@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Copy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { taskBudgetUnits } from '@/lib/strategic-plan/evalDraft';
 import { fmt1, fmtWon, parseAmount } from '@/lib/strategic-plan/format';
@@ -20,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { useStrategicPlanStore } from '@/store/useStrategicPlanStore';
 import {
   BudgetAmountTable,
+  TaskBudgetGrandTotal,
   sumAmounts,
   unitBudgetRows,
 } from './BudgetAmountTable';
@@ -80,6 +82,7 @@ function BudgetTaskCard({
         />
         <TaskHeading task={task} />
         <span className="shrink-0 text-right">
+          <span className="block text-muted-foreground">실행과제 총계</span>
           <span className="block tabular-nums">
             예산 {fmtWon(budgetTotal)} / 결산 {fmtWon(settlementTotal)}
           </span>
@@ -105,6 +108,14 @@ function BudgetTaskCard({
               readOnly={readOnly}
             />
           ))}
+          <TaskBudgetGrandTotal
+            taskCode={task.taskCode}
+            units={units}
+            fundSources={fundSources}
+            year={year}
+            budgetTotal={budgetTotal}
+            settlementTotal={settlementTotal}
+          />
         </CardContent>
       )}
     </Card>
@@ -122,6 +133,19 @@ export function BudgetView({
 }) {
   const year = useStrategicPlanStore((s) => s.year);
   const budgets = useStrategicPlanStore((s) => s.budgets);
+  const copyPreviousYearBudgets = useStrategicPlanStore(
+    (s) => s.copyPreviousYearBudgets,
+  );
+  const [copying, setCopying] = useState(false);
+
+  const copyLastYear = async () => {
+    setCopying(true);
+    try {
+      await copyPreviousYearBudgets();
+    } finally {
+      setCopying(false);
+    }
+  };
 
   if (fundSources.length === 0) {
     return (
@@ -183,17 +207,31 @@ export function BudgetView({
             미입력 <b>{none}</b>건
           </span>
         </div>
-        <span className="text-muted-foreground">
-          {year}학년도
-          {readOnly ? ' · 조회 전용' : ' · 입력하면 자동 저장됩니다.'}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {!readOnly && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={copying}
+              onClick={() => void copyLastYear()}
+            >
+              <Copy className="h-4 w-4" />
+              {copying ? '복사 중…' : '작년 예산 복사하기'}
+            </Button>
+          )}
+          <span className="text-muted-foreground">
+            {year}학년도
+            {readOnly ? ' · 조회 전용' : ' · 입력하면 자동 저장됩니다.'}
+          </span>
+        </div>
       </div>
 
       <Card>
         <CardContent className="p-4">
           <h3 className="mb-2 text-sm font-bold">재원별 합계 (단위 원)</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
+          <div>
+            <table className="w-full text-sm">
               <thead className="border-b">
                 <tr>
                   <th className="px-2 py-1.5 text-left font-bold">재원</th>

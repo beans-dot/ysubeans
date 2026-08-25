@@ -351,6 +351,16 @@ export class StrategicPlanService implements OnModuleInit {
     });
   }
 
+  /** 회원가입·회원정보 소속(부서) 드롭다운. 마스터만 읽고 자동 보강하지 않는다. */
+  async listAffiliationOffices(): Promise<Array<{ deptName: string }>> {
+    const rows = await this.departmentRepo.find({
+      order: { displayOrder: 'ASC', deptId: 'ASC' },
+    });
+    return rows
+      .filter((d) => d.deptName.trim())
+      .map((d) => ({ deptName: d.deptName }));
+  }
+
   listEvaluations(year: number) {
     return this.evaluationRepo.find({ where: { year } });
   }

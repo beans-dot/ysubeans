@@ -91,6 +91,11 @@ async function capture(
           node.remove();
         }
       });
+      cloned.querySelectorAll<HTMLElement>('[data-eval-ir]').forEach((node) => {
+        node.classList.remove('hidden');
+        node.style.display = 'block';
+        node.style.visibility = 'visible';
+      });
     },
   });
 }

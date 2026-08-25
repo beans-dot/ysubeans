@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import {
-  irEvalHasContent,
   taskBudgetUnits,
   yoyImprovementRate,
 } from '@/lib/strategic-plan/evalDraft';
@@ -32,7 +31,7 @@ import type {
 } from '@/lib/strategic-plan/types';
 import { cn } from '@/lib/utils';
 import { useStrategicPlanStore } from '@/store/useStrategicPlanStore';
-import { BudgetAmountTable } from './BudgetAmountTable';
+import { BudgetAmountTable, TaskBudgetGrandTotal, sumAmounts, unitBudgetRows } from './BudgetAmountTable';
 import { TaskHeading } from './TaskHeading';
 import { EmptyState, SectionLabel } from './ui';
 
@@ -90,7 +89,7 @@ function ActivityReportTable({
             <th className="px-2 py-1.5 text-left font-bold">사업(Activity명)</th>
             <th className="px-2 py-1.5 text-left font-bold">추진실적</th>
             <th className="px-2 py-1.5 text-left font-bold">재원</th>
-            <th className="px-2 py-1.5 text-right font-bold">집행액</th>
+            <th className="px-2 py-1.5 text-left font-bold">집행액</th>
             <th className="px-2 py-1.5 text-left font-bold">자체점검</th>
             <th className="px-2 py-1.5 text-left font-bold">차년도 환류사항</th>
           </tr>
@@ -154,10 +153,10 @@ function KpiTable({
           <tr>
             <th className="px-2 py-1.5 text-left font-bold">코드</th>
             <th className="px-2 py-1.5 text-left font-bold">지표명</th>
-            <th className="px-2 py-1.5 text-right font-bold">기준값</th>
-            <th className="px-2 py-1.5 text-right font-bold">{year} 목표</th>
-            <th className="px-2 py-1.5 text-right font-bold">{year} 실적</th>
-            <th className="px-2 py-1.5 text-right font-bold">달성률</th>
+            <th className="px-2 py-1.5 text-left font-bold">기준값</th>
+            <th className="px-2 py-1.5 text-left font-bold">{year} 목표</th>
+            <th className="px-2 py-1.5 text-left font-bold">{year} 실적</th>
+            <th className="px-2 py-1.5 text-left font-bold">달성률</th>
             <th className="px-2 py-1.5 text-left font-bold">PO 자체평가</th>
           </tr>
         </thead>
@@ -221,9 +220,9 @@ function SurveyItemsTable({ items }: { items: SpSurveyItem[] }) {
         <thead className="border-b bg-muted/50">
           <tr>
             <th className="px-2 py-1.5 text-left font-bold">만족도세부항목명</th>
-            <th className="px-2 py-1.5 text-right font-bold">전년도 달성값</th>
-            <th className="px-2 py-1.5 text-right font-bold">올해 달성값</th>
-            <th className="px-2 py-1.5 text-right font-bold">전년대비 향상률</th>
+            <th className="px-2 py-1.5 text-left font-bold">전년도 달성값</th>
+            <th className="px-2 py-1.5 text-left font-bold">올해 달성값</th>
+            <th className="px-2 py-1.5 text-left font-bold">전년대비 향상률</th>
             <th className="px-2 py-1.5 text-left font-bold">자체평가</th>
           </tr>
         </thead>
@@ -294,17 +293,43 @@ function SurveyPlansTable({ plans }: { plans: SpSurveyPlan[] }) {
   );
 }
 
-function IrSection({ ir }: { ir: SpIrEvalOverlay | undefined }) {
-  const comments = Object.entries(ir?.taskComments ?? {}).filter(
-    ([, v]) => (v ?? '').trim(),
-  );
-  if (!irEvalHasContent(ir)) {
-    return <p className="text-sm text-muted-foreground">작성된 IR 평가가 없습니다.</p>;
-  }
+function IrField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
   return (
-    <div className="space-y-3">
-      {comments.map(([code, text]) => (
-        <Field key={code} label={`${code} TASK 의견`} value={text} />
+    <div
+      data-eval-ir="1"
+      className="rounded-md border border-sky-300 bg-sky-50 p-3"
+    >
+      <p className="mb-1 text-xs font-bold text-sky-800">[IR 평가]</p>
+      <Field label={label} value={value} />
+    </div>
+  );
+}
+
+function IrSection({
+  ir,
+  units,
+}: {
+  ir: SpIrEvalOverlay | undefined;
+  units: Array<{ code: string; name: string }>;
+}) {
+  return (
+    <div
+      data-eval-ir="1"
+      className="space-y-3 rounded-md border border-sky-300 bg-sky-50 p-3"
+    >
+      <SectionLabel>[IR 평가]</SectionLabel>
+      {units.map((unit) => (
+        <Field
+          key={unit.code}
+          label={`${unit.code} TASK 의견`}
+          value={ir?.taskComments?.[unit.code]}
+        />
       ))}
       <Field label="성과지표 의견" value={ir?.kpiComment} />
       <Field label="주요 성과(우수사례)" value={ir?.achievements} />
@@ -321,8 +346,6 @@ function IrSection({ ir }: { ir: SpIrEvalOverlay | undefined }) {
         label={`성과지표 적절성${ir?.kpiAdequacyGrade ? ` · ${ir.kpiAdequacyGrade}` : ''}`}
         value={ir?.kpiAdequacy}
       />
-      <Field label="만족도 자체평가 1" value={ir?.surveyText1} />
-      <Field label="만족도 자체평가 2" value={ir?.surveyText2} />
       <Field label="만족도 세부항목 의견" value={ir?.surveyItemsComment} />
       <Field label="환류계획 의견" value={ir?.surveyPlansComment} />
     </div>
@@ -341,10 +364,20 @@ function ReportCard({
   fundSources: SpFundSource[];
 }) {
   const units = taskBudgetUnits(task);
+  const budgets = useStrategicPlanStore((s) => s.budgets);
+  const allRows = units.flatMap((unit) =>
+    unitBudgetRows(budgets, task.taskCode, unit.code, fundSources),
+  );
+  const budgetTotal = sumAmounts(allRows.map((r) => parseAmount(r.budget)));
+  const settlementTotal = sumAmounts(
+    allRows.map((r) => parseAmount(r.settlement)),
+  );
   return (
     <Card>
       <CardContent className="space-y-5 p-4">
         <TaskHeading task={task} />
+
+        <SectionLabel>[부서 자체평가]</SectionLabel>
 
         {units.map((unit) => (
           <div key={unit.code} className="space-y-3">
@@ -368,49 +401,89 @@ function ReportCard({
               rows={draft?.taskActivities?.[unit.code] ?? []}
               fundSources={fundSources}
             />
+            <IrField
+              label={`${unit.code} TASK 의견`}
+              value={draft?.irEval?.taskComments?.[unit.code]}
+            />
           </div>
         ))}
+
+        <div data-eval-budget="1" className="hidden">
+          <TaskBudgetGrandTotal
+            taskCode={task.taskCode}
+            units={units}
+            fundSources={fundSources}
+            year={year}
+            budgetTotal={budgetTotal}
+            settlementTotal={settlementTotal}
+          />
+        </div>
 
         <div>
           <SectionLabel>② 성과지표 달성값 — {year}학년도</SectionLabel>
           <KpiTable task={task} year={year} poEvals={draft?.kpiPoEvals} />
+          <IrField label="성과지표 의견" value={draft?.irEval?.kpiComment} />
         </div>
 
         <div className="space-y-3">
           <SectionLabel>부서 자체평가</SectionLabel>
           <Field label="③ 주요 성과(우수사례)" value={draft?.deptSummary} />
+          <IrField label="주요 성과(우수사례)" value={draft?.irEval?.achievements} />
           <Field
             label="부서 자체분석 및 개선방향"
             value={draft?.deptAnalysis}
+          />
+          <IrField
+            label="부서 자체분석 및 개선방향"
+            value={draft?.irEval?.analysis}
           />
           <Field
             label={`④ 예결산의 적절성${draft?.budgetAdequacyGrade ? ` · ${draft.budgetAdequacyGrade}` : ''}`}
             value={draft?.budgetAdequacy}
           />
+          <IrField
+            label={`예결산의 적절성${draft?.irEval?.budgetAdequacyGrade ? ` · ${draft.irEval.budgetAdequacyGrade}` : ''}`}
+            value={draft?.irEval?.budgetAdequacy}
+          />
           <Field
             label={`절차상 적절성${draft?.processAdequacyGrade ? ` · ${draft.processAdequacyGrade}` : ''}`}
             value={draft?.processAdequacy}
+          />
+          <IrField
+            label={`절차상 적절성${draft?.irEval?.processAdequacyGrade ? ` · ${draft.irEval.processAdequacyGrade}` : ''}`}
+            value={draft?.irEval?.processAdequacy}
           />
           <Field
             label={`성과지표 적절성${draft?.kpiAdequacyGrade ? ` · ${draft.kpiAdequacyGrade}` : ''}`}
             value={draft?.kpiAdequacy}
           />
-          <Field label="⑤ 만족도 자체평가 1" value={draft?.surveyAnalysis} />
-          <Field label="만족도 자체평가 2" value={draft?.surveyFeedback} />
+          <IrField
+            label={`성과지표 적절성${draft?.irEval?.kpiAdequacyGrade ? ` · ${draft.irEval.kpiAdequacyGrade}` : ''}`}
+            value={draft?.irEval?.kpiAdequacy}
+          />
           <div>
             <SectionLabel>만족도 세부항목</SectionLabel>
             <SurveyItemsTable items={draft?.surveyItems ?? []} />
+            <div className="mt-2">
+              <IrField
+                label="만족도 세부항목 의견"
+                value={draft?.irEval?.surveyItemsComment}
+              />
+            </div>
           </div>
           <div>
             <SectionLabel>만족도조사에 따른 환류계획</SectionLabel>
             <SurveyPlansTable plans={draft?.surveyPlans ?? []} />
+            <div className="mt-2">
+              <IrField
+                label="환류계획 의견"
+                value={draft?.irEval?.surveyPlansComment}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="space-y-3">
-          <SectionLabel>IR 평가</SectionLabel>
-          <IrSection ir={draft?.irEval} />
-        </div>
+        <IrSection ir={draft?.irEval} units={units} />
       </CardContent>
     </Card>
   );

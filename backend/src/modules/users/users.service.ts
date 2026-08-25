@@ -26,6 +26,7 @@ export class UsersService {
       id: user.id,
       name: user.name,
       email: user.email,
+      affiliationType: user.affiliationType,
       department: user.department,
       extension: user.extension,
       role: user.role,

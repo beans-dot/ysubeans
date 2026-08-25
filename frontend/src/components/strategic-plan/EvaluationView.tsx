@@ -130,15 +130,17 @@ function EvalKpiRow({
       <td className="px-2 py-1.5 text-right tabular-nums">{fmt(target)}</td>
       <td className="px-2 py-1.5 text-right">
         {canEditResult ? (
-          <Input
-            type="number"
-            step="any"
-            inputMode="decimal"
-            value={actual === null ? '' : String(actual)}
-            onChange={(e) => setKpiResult(kpi.kpiCode, e.target.value)}
-            aria-label={`${kpi.kpiCode} ${year} 실적값`}
-            className="h-8 w-24 text-right tabular-nums"
-          />
+          <div className="flex justify-end">
+            <Input
+              type="number"
+              step="any"
+              inputMode="decimal"
+              value={actual === null ? '' : String(actual)}
+              onChange={(e) => setKpiResult(kpi.kpiCode, e.target.value)}
+              aria-label={`${kpi.kpiCode} ${year} 실적값`}
+              className="h-8 w-24 text-right tabular-nums"
+            />
+          </div>
         ) : (
           <span className="tabular-nums">{fmt(actual)}</span>
         )}
@@ -167,6 +169,7 @@ function EvalKpiRow({
 function ActivityTable({
   taskCode,
   unitCode,
+  title,
   rows,
   fundSources,
   deptGrades,
@@ -175,6 +178,7 @@ function ActivityTable({
 }: {
   taskCode: string;
   unitCode: string;
+  title: ReactNode;
   rows: SpEvalActivity[];
   fundSources: SpFundSource[];
   deptGrades: string[];
@@ -199,16 +203,31 @@ function ActivityTable({
 
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto rounded-md border">
-        <table className="w-full min-w-[920px] text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 text-sm font-bold">{title}</p>
+        {!readOnly && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => onChange([...rows, emptyActivity()])}
+          >
+            <Plus className="h-4 w-4" />
+            사업 행 추가
+          </Button>
+        )}
+      </div>
+      <div className="rounded-md border">
+        <table className="w-full text-sm">
           <thead className="border-b bg-muted/50">
             <tr>
-              <th className="px-2 py-1.5 text-left font-bold">사업(Activity명)</th>
-              <th className="px-2 py-1.5 text-left font-bold">추진실적</th>
-              <th className="px-2 py-1.5 text-left font-bold">재원</th>
-              <th className="px-2 py-1.5 text-right font-bold">집행액</th>
-              <th className="px-2 py-1.5 text-left font-bold">자체점검</th>
-              <th className="px-2 py-1.5 text-left font-bold">차년도 환류사항</th>
+              <th align="left" className="px-2 py-1.5 text-left font-bold">사업(Activity명)</th>
+              <th align="left" className="px-2 py-1.5 text-left font-bold">추진실적</th>
+              <th align="left" className="px-2 py-1.5 text-left font-bold">재원</th>
+              <th align="left" className="px-2 py-1.5 text-left font-bold">집행액</th>
+              <th align="left" className="px-2 py-1.5 text-left font-bold">자체점검</th>
+              <th align="left" className="px-2 py-1.5 text-left font-bold">차년도 환류사항</th>
               {!readOnly && <th className="w-10 px-1 py-1.5" />}
             </tr>
           </thead>
@@ -222,7 +241,7 @@ function ActivityTable({
                     onChange={(e) =>
                       update(index, { activityName: e.target.value })
                     }
-                    className="h-8 min-w-[140px]"
+                    className="h-8"
                   />
                 </td>
                 <td className="px-2 py-1.5">
@@ -233,7 +252,7 @@ function ActivityTable({
                     onChange={(e) =>
                       update(index, { performance: e.target.value })
                     }
-                    className="min-h-[64px] min-w-[180px]"
+                    className="min-h-[64px]"
                   />
                 </td>
                 <td className="px-2 py-1.5">
@@ -256,16 +275,18 @@ function ActivityTable({
                     ))}
                   </NativeSelect>
                 </td>
-                <td className="px-2 py-1.5">
-                  <Input
-                    value={row.executionAmount}
-                    readOnly={readOnly}
-                    inputMode="numeric"
-                    onChange={(e) =>
-                      update(index, { executionAmount: e.target.value })
-                    }
-                    className="h-8 w-28 text-right tabular-nums"
-                  />
+                <td className="px-2 py-1.5 text-right">
+                  <div className="flex justify-end">
+                    <Input
+                      value={row.executionAmount}
+                      readOnly={readOnly}
+                      inputMode="numeric"
+                      onChange={(e) =>
+                        update(index, { executionAmount: e.target.value })
+                      }
+                      className="h-8 w-28 text-right tabular-nums"
+                    />
+                  </div>
                 </td>
                 <td className="px-2 py-1.5">
                   <GradeSelect
@@ -284,7 +305,7 @@ function ActivityTable({
                     onChange={(e) =>
                       update(index, { nextYearFeedback: e.target.value })
                     }
-                    className="min-h-[64px] min-w-[160px]"
+                    className="min-h-[64px]"
                   />
                 </td>
                 {!readOnly && (
@@ -325,17 +346,6 @@ function ActivityTable({
           집행액 합계가 해당 TASK 결산 합계와 일치하지 않습니다. (집행{' '}
           {fmtWon(execTotal)} / 결산 {fmtWon(settleTotal)})
         </p>
-      )}
-      {!readOnly && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onChange([...rows, emptyActivity()])}
-        >
-          <Plus className="h-4 w-4" />
-          사업 행 추가
-        </Button>
       )}
     </div>
   );
@@ -390,30 +400,37 @@ const EvaluationCard = memo(function EvaluationCard({
       | 'budgetAdequacyGrade'
       | 'processAdequacyGrade'
       | 'kpiAdequacyGrade';
-    label: string;
-  }> = [
-    {
-      textKey: 'budgetAdequacy',
-      gradeKey: 'budgetAdequacyGrade',
-      irText: 'budgetAdequacy',
-      irGrade: 'budgetAdequacyGrade',
-      label: '예결산의 적절성',
-    },
-    {
-      textKey: 'processAdequacy',
-      gradeKey: 'processAdequacyGrade',
-      irText: 'processAdequacy',
-      irGrade: 'processAdequacyGrade',
-      label: '절차상 적절성',
-    },
-    {
-      textKey: 'kpiAdequacy',
-      gradeKey: 'kpiAdequacyGrade',
-      irText: 'kpiAdequacy',
-      irGrade: 'kpiAdequacyGrade',
-      label: '성과지표 적절성',
-    },
-  ];
+            label: string;
+            placeholder: string;
+          }> = [
+            {
+              textKey: 'budgetAdequacy',
+              gradeKey: 'budgetAdequacyGrade',
+              irText: 'budgetAdequacy',
+              irGrade: 'budgetAdequacyGrade',
+              label: '예결산의 적절성',
+              placeholder:
+                '예결산의 적절성에 대한 자체점검을 기술합니다. 예산 집행률에 따라 차년도 예산의 증감을 서술합니다.',
+            },
+            {
+              textKey: 'processAdequacy',
+              gradeKey: 'processAdequacyGrade',
+              irText: 'processAdequacy',
+              irGrade: 'processAdequacyGrade',
+              label: '절차상 적절성',
+              placeholder:
+                '절차상 적절성(규정, 지침 구비 및 준수 여부 등)에 대한 자체점검을 기술합니다.',
+            },
+            {
+              textKey: 'kpiAdequacy',
+              gradeKey: 'kpiAdequacyGrade',
+              irText: 'kpiAdequacy',
+              irGrade: 'kpiAdequacyGrade',
+              label: '성과지표 적절성',
+              placeholder:
+                '성과지표의 적절성(성과지표 산식, 구성, 산출시기 등)에 대한 자체점검을 기술합니다.',
+            },
+          ];
 
   return (
     <Card>
@@ -444,13 +461,15 @@ const EvaluationCard = memo(function EvaluationCard({
                 const rows = activitiesForUnit(draft, unit.code);
                 return (
                   <div key={unit.code} className="space-y-2">
-                    <p className="text-sm font-bold">
-                      {unit.code}
-                      <span className="ml-2 font-normal">{unit.name}</span>
-                    </p>
                     <ActivityTable
                       taskCode={task.taskCode}
                       unitCode={unit.code}
+                      title={
+                        <>
+                          {unit.code}
+                          <span className="ml-2 font-normal">{unit.name}</span>
+                        </>
+                      }
                       rows={rows}
                       fundSources={fundSources}
                       deptGrades={deptGrades}
@@ -490,19 +509,19 @@ const EvaluationCard = memo(function EvaluationCard({
             {task.kpiCodes.length === 0 ? (
               <p className="text-sm text-muted-foreground">연계 KPI 없음</p>
             ) : (
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full min-w-[760px] text-sm">
+              <div className="rounded-md border">
+                <table className="w-full text-sm">
                   <thead className="border-b bg-muted/50">
                     <tr>
                       <th className="px-2 py-1.5 text-left font-bold">코드</th>
                       <th className="px-2 py-1.5 text-left font-bold">지표명</th>
                       <th className="px-2 py-1.5 text-left font-bold">단위</th>
-                      <th className="px-2 py-1.5 text-right font-bold">기준값</th>
-                      <th className="px-2 py-1.5 text-right font-bold">
+                      <th className="px-2 py-1.5 text-left font-bold">기준값</th>
+                      <th className="px-2 py-1.5 text-left font-bold">
                         &apos;{String(year).slice(2)} 목표
                       </th>
-                      <th className="px-2 py-1.5 text-right font-bold">실적값</th>
-                      <th className="px-2 py-1.5 text-right font-bold">달성률</th>
+                      <th className="px-2 py-1.5 text-left font-bold">실적값</th>
+                      <th className="px-2 py-1.5 text-left font-bold">달성률</th>
                       <th className="px-2 py-1.5 text-left font-bold">
                         PO 자체평가
                       </th>
@@ -553,7 +572,7 @@ const EvaluationCard = memo(function EvaluationCard({
           </div>
 
           <div>
-            <SectionLabel>③ 주요 성과 및 우수사례 · 책임부서 작성</SectionLabel>
+            <SectionLabel>③ 주요 성과 및 우수사례</SectionLabel>
             <div className="grid gap-3">
               <div className="grid gap-1.5">
                 <Label htmlFor={`ev-${task.taskCode}-ach`}>
@@ -605,7 +624,7 @@ const EvaluationCard = memo(function EvaluationCard({
           </div>
 
           <div>
-            <SectionLabel>④ 자체점검 및 진단 · 책임부서 작성</SectionLabel>
+            <SectionLabel>④ 자체점검 및 진단</SectionLabel>
             <div className="grid gap-4">
               {diagnosis.map((item) => (
                 <div key={item.textKey} className="grid gap-1.5">
@@ -625,7 +644,7 @@ const EvaluationCard = memo(function EvaluationCard({
                     rows={3}
                     readOnly={deptLocked}
                     value={draft?.[item.textKey] ?? ''}
-                    placeholder={`${item.label}에 대한 자체점검을 기술합니다.`}
+                    placeholder={item.placeholder}
                     onChange={(e) => setText(item.textKey, e.target.value)}
                   />
                   <IrBlock irMode={irMode} label={`${item.label} IR 평가`}>
@@ -653,69 +672,42 @@ const EvaluationCard = memo(function EvaluationCard({
           </div>
 
           <div>
-            <SectionLabel>
-              ⑤ 만족도 조사 기반 자체평가 · 책임부서 작성
-            </SectionLabel>
+            <SectionLabel>⑤ 만족도 조사 기반 자체평가</SectionLabel>
             <div className="grid gap-3">
-              <div className="grid gap-1.5">
-                <Label htmlFor={`ev-${task.taskCode}-sv1`}>자체평가 1</Label>
-                <Textarea
-                  id={`ev-${task.taskCode}-sv1`}
-                  rows={3}
-                  readOnly={deptLocked}
-                  value={draft?.surveyAnalysis ?? ''}
-                  placeholder="만족도 조사 결과에 대한 자체평가를 기술합니다."
-                  onChange={(e) => setText('surveyAnalysis', e.target.value)}
-                />
-                <IrBlock irMode={irMode}>
-                  <Textarea
-                    rows={3}
-                    value={ir.surveyText1 ?? ''}
-                    placeholder="첨삭 또는 추가 의견"
-                    onChange={(e) =>
-                      setIrEvalField(task.taskCode, 'surveyText1', e.target.value)
-                    }
-                  />
-                </IrBlock>
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor={`ev-${task.taskCode}-sv2`}>자체평가 2</Label>
-                <Textarea
-                  id={`ev-${task.taskCode}-sv2`}
-                  rows={3}
-                  readOnly={deptLocked}
-                  value={draft?.surveyFeedback ?? ''}
-                  placeholder="만족도 조사에 따른 추가 자체평가를 기술합니다."
-                  onChange={(e) => setText('surveyFeedback', e.target.value)}
-                />
-                <IrBlock irMode={irMode}>
-                  <Textarea
-                    rows={3}
-                    value={ir.surveyText2 ?? ''}
-                    placeholder="첨삭 또는 추가 의견"
-                    onChange={(e) =>
-                      setIrEvalField(task.taskCode, 'surveyText2', e.target.value)
-                    }
-                  />
-                </IrBlock>
-              </div>
-
               <div>
-                <SectionLabel className="mt-2">만족도 세부항목</SectionLabel>
-                <div className="overflow-x-auto rounded-md border">
-                  <table className="w-full min-w-[720px] text-sm">
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                  <SectionLabel className="mb-0">만족도 세부항목</SectionLabel>
+                  {!deptLocked && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() =>
+                        setEvaluationData(task.taskCode, {
+                          surveyItems: [...surveyItems, emptySurveyItem()],
+                        })
+                      }
+                    >
+                      <Plus className="h-4 w-4" />
+                      세부항목 추가
+                    </Button>
+                  )}
+                </div>
+                <div className="rounded-md border">
+                  <table className="w-full text-sm">
                     <thead className="border-b bg-muted/50">
                       <tr>
                         <th className="px-2 py-1.5 text-left font-bold">
                           만족도세부항목명
                         </th>
-                        <th className="px-2 py-1.5 text-right font-bold">
+                        <th className="px-2 py-1.5 text-left font-bold">
                           전년도 달성값
                         </th>
-                        <th className="px-2 py-1.5 text-right font-bold">
+                        <th className="px-2 py-1.5 text-left font-bold">
                           올해 달성값
                         </th>
-                        <th className="px-2 py-1.5 text-right font-bold">
+                        <th className="px-2 py-1.5 text-left font-bold">
                           전년대비 향상률
                         </th>
                         <th className="px-2 py-1.5 text-left font-bold">자체평가</th>
@@ -742,27 +734,31 @@ const EvaluationCard = memo(function EvaluationCard({
                                 className="h-8"
                               />
                             </td>
-                            <td className="px-2 py-1.5">
-                              <Input
-                                value={row.prevValue}
-                                readOnly={deptLocked}
-                                inputMode="decimal"
-                                onChange={(e) =>
-                                  update({ prevValue: e.target.value })
-                                }
-                                className="h-8 w-24 text-right tabular-nums"
-                              />
+                            <td className="px-2 py-1.5 text-right">
+                              <div className="flex justify-end">
+                                <Input
+                                  value={row.prevValue}
+                                  readOnly={deptLocked}
+                                  inputMode="decimal"
+                                  onChange={(e) =>
+                                    update({ prevValue: e.target.value })
+                                  }
+                                  className="h-8 w-24 text-right tabular-nums"
+                                />
+                              </div>
                             </td>
-                            <td className="px-2 py-1.5">
-                              <Input
-                                value={row.thisValue}
-                                readOnly={deptLocked}
-                                inputMode="decimal"
-                                onChange={(e) =>
-                                  update({ thisValue: e.target.value })
-                                }
-                                className="h-8 w-24 text-right tabular-nums"
-                              />
+                            <td className="px-2 py-1.5 text-right">
+                              <div className="flex justify-end">
+                                <Input
+                                  value={row.thisValue}
+                                  readOnly={deptLocked}
+                                  inputMode="decimal"
+                                  onChange={(e) =>
+                                    update({ thisValue: e.target.value })
+                                  }
+                                  className="h-8 w-24 text-right tabular-nums"
+                                />
+                              </div>
                             </td>
                             <td className="px-2 py-1.5 text-right tabular-nums">
                               {rate === null ? '–' : `${fmt1(rate)}%`}
@@ -802,22 +798,6 @@ const EvaluationCard = memo(function EvaluationCard({
                     </tbody>
                   </table>
                 </div>
-                {!deptLocked && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={() =>
-                      setEvaluationData(task.taskCode, {
-                        surveyItems: [...surveyItems, emptySurveyItem()],
-                      })
-                    }
-                  >
-                    <Plus className="h-4 w-4" />
-                    세부항목 추가
-                  </Button>
-                )}
                 <IrBlock irMode={irMode} label="만족도 세부항목 IR 평가">
                   <Textarea
                     rows={3}
@@ -835,11 +815,29 @@ const EvaluationCard = memo(function EvaluationCard({
               </div>
 
               <div>
-                <SectionLabel className="mt-2">
-                  만족도조사에 따른 환류계획
-                </SectionLabel>
-                <div className="overflow-x-auto rounded-md border">
-                  <table className="w-full min-w-[720px] text-sm">
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                  <SectionLabel className="mb-0">
+                    만족도조사에 따른 환류계획
+                  </SectionLabel>
+                  {!deptLocked && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() =>
+                        setEvaluationData(task.taskCode, {
+                          surveyPlans: [...surveyPlans, emptySurveyPlan()],
+                        })
+                      }
+                    >
+                      <Plus className="h-4 w-4" />
+                      환류계획 행 추가
+                    </Button>
+                  )}
+                </div>
+                <div className="rounded-md border">
+                  <table className="w-full text-sm">
                     <thead className="border-b bg-muted/50">
                       <tr>
                         <th className="px-2 py-1.5 text-left font-bold">구분</th>
@@ -868,7 +866,7 @@ const EvaluationCard = memo(function EvaluationCard({
                                 onChange={(e) =>
                                   update({ category: e.target.value })
                                 }
-                                className="h-8 min-w-[100px]"
+                                className="h-8"
                               />
                             </td>
                             <td className="px-2 py-1.5">
@@ -929,22 +927,6 @@ const EvaluationCard = memo(function EvaluationCard({
                     </tbody>
                   </table>
                 </div>
-                {!deptLocked && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={() =>
-                      setEvaluationData(task.taskCode, {
-                        surveyPlans: [...surveyPlans, emptySurveyPlan()],
-                      })
-                    }
-                  >
-                    <Plus className="h-4 w-4" />
-                    환류계획 행 추가
-                  </Button>
-                )}
                 <IrBlock irMode={irMode} label="환류계획 IR 평가">
                   <Textarea
                     rows={3}

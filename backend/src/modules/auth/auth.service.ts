@@ -12,8 +12,14 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Repository } from 'typeorm';
 import { IrLoginLog } from '../../entities/ir-login-log.entity';
-import { IrUser } from '../../entities/ir-user.entity';
+import { AffiliationType, IrUser } from '../../entities/ir-user.entity';
+import { InternalOrgService } from '../internal-org/internal-org.service';
 import { MailService } from '../mail/mail.service';
+import { StrategicPlanService } from '../strategic-plan/strategic-plan.service';
+import {
+  AffiliationOptions,
+  AFFILIATION_TYPES,
+} from './affiliation';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { FindAccountDto } from './dto/find-account.dto';
 import { LoginDto } from './dto/login.dto';
@@ -30,6 +36,8 @@ export class AuthService implements OnModuleInit {
     private readonly loginLogRepo: Repository<IrLoginLog>,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
+    private readonly internalOrgService: InternalOrgService,
+    private readonly strategicPlanService: StrategicPlanService,
   ) {}
 
   async onModuleInit() {
@@ -62,6 +70,7 @@ export class AuthService implements OnModuleInit {
       id: user.id,
       name: user.name,
       email: user.email,
+      affiliationType: user.affiliationType,
       department: user.department,
       extension: user.extension,
       role: user.role,
@@ -83,6 +92,44 @@ export class AuthService implements OnModuleInit {
     return out;
   }
 
+  async getAffiliationOptions(): Promise<AffiliationOptions> {
+    const [majors, offices] = await Promise.all([
+      this.internalOrgService.listAffiliationMajors(),
+      this.strategicPlanService.listAffiliationOffices(),
+    ]);
+    return { majors, offices };
+  }
+
+  private async resolveAffiliation(
+    type: AffiliationType,
+    rawDepartment: string,
+  ): Promise<{ affiliationType: AffiliationType; department: string }> {
+    if (!AFFILIATION_TYPES.includes(type)) {
+      throw new BadRequestException(
+        '소속 유형은 학과, 부서, 기타 중 하나여야 합니다.',
+      );
+    }
+
+    const department = rawDepartment.trim();
+    if (!department) {
+      throw new BadRequestException('소속을 입력해 주세요.');
+    }
+
+    if (type === '학과') {
+      const majors = await this.internalOrgService.listAffiliationMajors();
+      if (!majors.some((m) => m.deptName === department)) {
+        throw new BadRequestException('선택한 학과가 목록에 없습니다.');
+      }
+    } else if (type === '부서') {
+      const offices = await this.strategicPlanService.listAffiliationOffices();
+      if (!offices.some((d) => d.deptName === department)) {
+        throw new BadRequestException('선택한 부서가 목록에 없습니다.');
+      }
+    }
+
+    return { affiliationType: type, department };
+  }
+
   async register(dto: RegisterDto) {
     const id = dto.id.trim();
     const email = dto.email.trim().toLowerCase();
@@ -96,6 +143,11 @@ export class AuthService implements OnModuleInit {
       throw new ConflictException('이미 사용 중인 이메일입니다.');
     }
 
+    const affiliation = await this.resolveAffiliation(
+      dto.affiliationType,
+      dto.department,
+    );
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.usersRepo.save(
       this.usersRepo.create({
@@ -103,7 +155,8 @@ export class AuthService implements OnModuleInit {
         name: dto.name.trim(),
         email,
         passwordHash,
-        department: dto.department.trim(),
+        affiliationType: affiliation.affiliationType,
+        department: affiliation.department,
         extension: dto.extension.trim(),
         role: 'user',
         status: 'pending',
@@ -206,6 +259,7 @@ export class AuthService implements OnModuleInit {
       name: user.name,
       role: user.role,
       email: user.email,
+      affiliationType: user.affiliationType,
       department: user.department,
       extension: user.extension,
     };
@@ -265,9 +319,15 @@ export class AuthService implements OnModuleInit {
       }
     }
 
+    const affiliation = await this.resolveAffiliation(
+      dto.affiliationType,
+      dto.department,
+    );
+
     user.name = dto.name.trim();
     user.email = email;
-    user.department = dto.department.trim();
+    user.affiliationType = affiliation.affiliationType;
+    user.department = affiliation.department;
     user.extension = dto.extension.trim();
     await this.usersRepo.save(user);
 

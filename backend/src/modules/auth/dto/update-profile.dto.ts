@@ -1,10 +1,12 @@
 import {
   IsEmail,
+  IsIn,
   IsNotEmpty,
   IsString,
   Matches,
   MaxLength,
 } from 'class-validator';
+import { AFFILIATION_TYPES } from '../affiliation';
 
 export class UpdateProfileDto {
   @IsString()
@@ -17,6 +19,11 @@ export class UpdateProfileDto {
     message: '이메일은 yeonsung.ac.kr 도메인만 사용할 수 있습니다.',
   })
   email: string;
+
+  @IsIn(AFFILIATION_TYPES, {
+    message: '소속 유형은 학과, 부서, 기타 중 하나여야 합니다.',
+  })
+  affiliationType: (typeof AFFILIATION_TYPES)[number];
 
   @IsString()
   @IsNotEmpty()

@@ -6,7 +6,9 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { IrLoginLog } from '../../entities/ir-login-log.entity';
 import { IrUser } from '../../entities/ir-user.entity';
+import { InternalOrgModule } from '../internal-org/internal-org.module';
 import { MailModule } from '../mail/mail.module';
+import { StrategicPlanModule } from '../strategic-plan/strategic-plan.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -26,6 +28,8 @@ import { JwtStrategy } from './jwt.strategy';
       }),
     }),
     MailModule,
+    InternalOrgModule,
+    StrategicPlanModule,
   ],
   controllers: [AuthController],
   providers: [

@@ -13,7 +13,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { api } from '@/lib/api';
+import { AffiliationFields } from '@/components/auth/AffiliationFields';
+import {
+  api,
+  inferAffiliationType,
+  type AffiliationOptions,
+  type AffiliationType,
+} from '@/lib/api';
 import { isYeonsungEmail, setSessionCookie, type AuthUser } from '@/lib/auth';
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -34,6 +40,7 @@ type Profile = {
   name: string;
   role: AuthUser['role'];
   email: string;
+  affiliationType: AffiliationType | null;
   department: string;
   extension: string;
 };
@@ -44,7 +51,12 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [affiliationType, setAffiliationType] = useState<
+    AffiliationType | ''
+  >('');
   const [department, setDepartment] = useState('');
+  const [affiliationOptions, setAffiliationOptions] =
+    useState<AffiliationOptions | null>(null);
   const [extension, setExtension] = useState('');
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -68,11 +80,18 @@ export default function ProfilePage() {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await api.get<Profile>('/auth/me');
+        const [{ data }, { data: options }] = await Promise.all([
+          api.get<Profile>('/auth/me'),
+          api.get<AffiliationOptions>('/auth/affiliation-options'),
+        ]);
         if (cancelled) return;
         setProfile(data);
+        setAffiliationOptions(options);
         setName(data.name);
         setEmail(data.email);
+        setAffiliationType(
+          inferAffiliationType(data.affiliationType, data.department, options),
+        );
         setDepartment(data.department);
         setExtension(data.extension);
       } catch (err) {
@@ -99,12 +118,21 @@ export default function ProfilePage() {
       setProfileError('이메일은 yeonsung.ac.kr 도메인만 사용할 수 있습니다.');
       return;
     }
+    if (!affiliationType) {
+      setProfileError('소속 유형을 선택해 주세요.');
+      return;
+    }
+    if (!department.trim()) {
+      setProfileError('소속을 선택하거나 입력해 주세요.');
+      return;
+    }
 
     setProfileBusy(true);
     try {
       const { data } = await api.patch<Profile>('/auth/me', {
         name,
         email,
+        affiliationType,
         department,
         extension,
       });
@@ -212,15 +240,14 @@ export default function ProfilePage() {
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="profile-department">소속부서</Label>
-                    <Input
-                      id="profile-department"
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      required
-                    />
-                  </div>
+                  <AffiliationFields
+                    idPrefix="profile"
+                    affiliationType={affiliationType}
+                    department={department}
+                    options={affiliationOptions}
+                    onAffiliationTypeChange={setAffiliationType}
+                    onDepartmentChange={setDepartment}
+                  />
                   <div className="space-y-2">
                     <Label htmlFor="profile-extension">내선번호</Label>
                     <Input

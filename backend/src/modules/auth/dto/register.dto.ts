@@ -1,11 +1,13 @@
 import {
   IsEmail,
+  IsIn,
   IsNotEmpty,
   IsString,
   Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { AFFILIATION_TYPES } from '../affiliation';
 import { Match } from './match.decorator';
 
 export class RegisterDto {
@@ -37,6 +39,11 @@ export class RegisterDto {
   @IsNotEmpty()
   @Match('password', { message: '비밀번호 확인이 일치하지 않습니다.' })
   passwordConfirm: string;
+
+  @IsIn(AFFILIATION_TYPES, {
+    message: '소속 유형은 학과, 부서, 기타 중 하나여야 합니다.',
+  })
+  affiliationType: (typeof AFFILIATION_TYPES)[number];
 
   @IsString()
   @IsNotEmpty()

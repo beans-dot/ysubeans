@@ -15,6 +15,12 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Get('affiliation-options')
+  affiliationOptions() {
+    return this.authService.getAffiliationOptions();
+  }
+
+  @Public()
   @Post('register')
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
