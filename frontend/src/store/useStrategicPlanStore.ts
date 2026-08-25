@@ -33,6 +33,7 @@ export type SpCompareMode = 'jc' | 'all' | 'univ';
 export type SpKpiSortKey = '' | 'code' | 'baseline' | 'lastTarget';
 
 export const SP_YEAR_VIEWS: SpView[] = [
+  'strategy',
   'budget',
   'eval',
   'kpi',
@@ -161,11 +162,12 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   load: async () => {
     set({ loading: true, error: null });
     try {
+      const latest = await fetchSpTree();
+      const year = defaultYear(latest.years);
       const [tree, fundSources] = await Promise.all([
-        fetchSpTree(),
-        fetchSpFundSources(),
+        fetchSpTree(year),
+        fetchSpFundSources(false, year),
       ]);
-      const year = defaultYear(tree.years);
       set({ tree, fundSources, year, loading: false });
       await get().loadEntries(year);
     } catch {
@@ -232,7 +234,18 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   setSpecializedOnly: (specializedOnly) => set({ specializedOnly }),
   setYear: (year) => {
     set({ year });
-    void get().loadEntries(year);
+    void (async () => {
+      try {
+        const [tree, fundSources] = await Promise.all([
+          fetchSpTree(year),
+          fetchSpFundSources(false, year),
+        ]);
+        set({ tree, fundSources });
+      } catch {
+        set({ saveError: '해당 학년도 체계를 불러오지 못했습니다.' });
+      }
+      await get().loadEntries(year);
+    })();
   },
   setCompareMode: (compareMode) => set({ compareMode }),
   toggleKpiSort: (key) =>

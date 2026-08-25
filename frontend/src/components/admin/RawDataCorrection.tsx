@@ -22,6 +22,7 @@ import {
   type RawCorrectionItem,
   type RawCorrectionSourceType,
 } from '@/lib/api';
+import { notifyAutoSaved } from '@/components/admin/AutoSaveToast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -239,9 +240,8 @@ function RawDataCorrectionPane({
         const updated = await patchRawCorrectionValue(data.rawId, nextValue);
         data.metricValue = updated.metricValue;
         event.api.refreshCells({ rowNodes: [event.node!], force: true });
-        setStatusMsg(
-          `저장 완료: ${updated.metricName} → ${updated.metricValue}`,
-        );
+        setStatusMsg(null);
+        notifyAutoSaved();
       } catch (err) {
         data.metricValue = prevValue;
         event.api.refreshCells({ rowNodes: [event.node!], force: true });

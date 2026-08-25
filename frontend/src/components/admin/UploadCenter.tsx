@@ -18,6 +18,7 @@ import {
   type MetricCodebookEntry,
   type UniversityCodebook,
 } from '@/lib/api';
+import { logDataExport } from '@/lib/exportLog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -579,14 +580,24 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
         kind,
         mode,
       );
-      XLSX.writeFile(
-        wb,
+      const filename =
         mode === 'monitoring'
           ? `ysu-ir-monitoring-upload-template-${univ.referenceYear}.xlsx`
           : kind === 'campus'
             ? `ysu-ir-upload-campus-template-${univ.referenceYear}.xlsx`
-            : `ysu-ir-upload-template-${univ.referenceYear}.xlsx`,
-      );
+            : `ysu-ir-upload-template-${univ.referenceYear}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      logDataExport({
+        format: 'xlsx',
+        source: 'upload-template',
+        filename,
+        summary:
+          mode === 'monitoring'
+            ? '모니터링 업로드 양식'
+            : kind === 'campus'
+              ? '캠퍼스 업로드 양식'
+              : '자체 데이터 업로드 양식',
+      });
     } catch {
       setError('샘플 양식 생성 실패 (코드 조회 오류)');
     } finally {
@@ -603,12 +614,18 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
         fetchMetricCodebook(),
       ]);
       const wb = buildCodebookWorkbook(univ, metrics, mode);
-      XLSX.writeFile(
-        wb,
+      const filename =
         mode === 'monitoring'
           ? `ysu-ir-monitoring-codebook-${univ.referenceYear}.xlsx`
-          : `ysu-ir-codebook-${univ.referenceYear}.xlsx`,
-      );
+          : `ysu-ir-codebook-${univ.referenceYear}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      logDataExport({
+        format: 'xlsx',
+        source: 'upload-codebook',
+        filename,
+        summary:
+          mode === 'monitoring' ? '모니터링 코드북' : '자체 데이터 코드북',
+      });
     } catch {
       setError('코드북 다운로드 실패');
     } finally {

@@ -61,9 +61,16 @@ export function taskBudgetUnits(task: SpTask) {
     return task.subtasks.map((s) => ({
       code: s.subtaskCode,
       name: s.subtaskName,
+      displayCode: s.displayCode ?? s.subtaskCode,
     }));
   }
-  return [{ code: task.taskCode, name: task.taskName }];
+  return [
+    {
+      code: task.taskCode,
+      name: task.taskName,
+      displayCode: task.displayCode ?? task.taskCode,
+    },
+  ];
 }
 
 export function activitiesForUnit(

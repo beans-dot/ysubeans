@@ -59,7 +59,7 @@ function MenuHub() {
           YSU IR Library
         </h1>
         <p className="mt-3 text-center text-[16px] tracking-wide text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.4)]">
-          Yeonsung Institutional Research Library
+          Yeonsung University Institutional Research Library
         </p>
 
         <nav

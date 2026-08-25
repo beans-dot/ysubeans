@@ -90,6 +90,7 @@ export class MetricsService {
       await this.ensureUncategorizedCategory('INTERNAL');
       await this.ensureUncategorizedCategory('MONITORING');
       await this.ensureMonitoringCatalog();
+      await this.removeUnusedEmptyCategories();
       return;
     }
 
@@ -132,7 +133,24 @@ export class MetricsService {
     }
 
     await this.ensureMonitoringCatalog();
+    await this.removeUnusedEmptyCategories();
     this.domainReady = true;
+  }
+
+  /** 쓰지 않는 빈 카테고리(대학 만족도 조사, 기타 자체지표)를 제거한다. */
+  private async removeUnusedEmptyCategories(): Promise<void> {
+    const names = ['대학 만족도 조사', '기타(자체지표)'];
+    for (const name of names) {
+      const cats = await this.categoryRepo.find({ where: { categoryName: name } });
+      for (const cat of cats) {
+        const n = await this.metricRepo.count({
+          where: { categoryId: cat.categoryId },
+        });
+        if (n === 0) {
+          await this.categoryRepo.delete(cat.categoryId);
+        }
+      }
+    }
   }
 
   /** 해당 지표에 연결된 원본 데이터 건수 */

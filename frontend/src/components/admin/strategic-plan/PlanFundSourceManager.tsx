@@ -1,16 +1,27 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Plus } from 'lucide-react';
+import { IR_WORK_SAVE_EVENT, notifyAutoSaved } from '@/components/admin/AutoSaveToast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/strategic-plan/ui';
 import {
   createSpFundSource,
   deleteSpFundSource,
   fetchSpFundSources,
+  fetchSpTree,
   updateSpFundSource,
 } from '@/lib/strategic-plan/api';
 import { apiMessage } from '@/lib/strategic-plan/apiError';
@@ -18,8 +29,16 @@ import type { SpFundSource } from '@/lib/strategic-plan/types';
 
 export function PlanFundSourceManager() {
   const [items, setItems] = useState<SpFundSource[]>([]);
+  const [years, setYears] = useState<number[]>([2022, 2023, 2024, 2025, 2026, 2027]);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<
+    | { type: 'create'; name: string }
+    | { type: 'rename'; fund: SpFundSource; name: string }
+    | { type: 'abolish'; fund: SpFundSource }
+    | null
+  >(null);
+  const [year, setYear] = useState(2025);
 
   const load = () => {
     fetchSpFundSources(true)
@@ -27,44 +46,45 @@ export function PlanFundSourceManager() {
       .catch(() => setItems([]));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    fetchSpTree()
+      .then((tree) => {
+        setYears(tree.years);
+        setYear(tree.years[tree.years.length - 1] ?? 2025);
+      })
+      .catch(() => undefined);
+  }, []);
 
-  const handleAdd = async () => {
-    const name = newName.trim();
-    if (!name) return;
+  useEffect(() => {
+    const onSave = () => {
+      load();
+      notifyAutoSaved();
+    };
+    window.addEventListener(IR_WORK_SAVE_EVENT, onSave);
+    return () => window.removeEventListener(IR_WORK_SAVE_EVENT, onSave);
+  }, []);
+
+  const submitPending = async () => {
+    if (!pending) return;
     setBusy(true);
     try {
-      await createSpFundSource(name);
-      setNewName('');
+      if (pending.type === 'create') {
+        await createSpFundSource(pending.name, year);
+        setNewName('');
+      } else if (pending.type === 'rename') {
+        await updateSpFundSource(pending.fund.fundSourceId, {
+          fundSourceName: pending.name,
+          year,
+        });
+      } else {
+        await deleteSpFundSource(pending.fund.fundSourceId, year);
+      }
+      setPending(null);
       load();
+      notifyAutoSaved();
     } catch (e) {
-      alert(apiMessage(e, '재원 추가 실패'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleRename = async (fund: SpFundSource, name: string) => {
-    if (name.trim() === fund.fundSourceName) return;
-    setBusy(true);
-    try {
-      await updateSpFundSource(fund.fundSourceId, { fundSourceName: name });
-      load();
-    } catch (e) {
-      alert(apiMessage(e, '재원 이름 수정 실패'));
-      load();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleToggleActive = async (fund: SpFundSource, isActive: boolean) => {
-    setBusy(true);
-    try {
-      await updateSpFundSource(fund.fundSourceId, { isActive });
-      load();
-    } catch (e) {
-      alert(apiMessage(e, '재원 상태 변경 실패'));
+      alert(apiMessage(e, '재원 변경 실패'));
     } finally {
       setBusy(false);
     }
@@ -87,27 +107,6 @@ export function PlanFundSourceManager() {
     }
   };
 
-  const handleDelete = async (fund: SpFundSource) => {
-    const ok = window.confirm(
-      `재원 「${fund.fundSourceName}」을(를) 삭제할까요?\n이미 입력된 예산·결산이 있으면 삭제 대신 비활성으로 바뀝니다.`,
-    );
-    if (!ok) return;
-    setBusy(true);
-    try {
-      const result = await deleteSpFundSource(fund.fundSourceId);
-      if (result.deactivated) {
-        alert(
-          `입력된 예산·결산이 ${result.used}건 있어 삭제하지 않고 비활성으로 바꿨습니다.`,
-        );
-      }
-      load();
-    } catch (e) {
-      alert(apiMessage(e, '재원 삭제 실패'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -115,8 +114,8 @@ export function PlanFundSourceManager() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          대시보드 예산·결산 탭에서 실행과제마다 나타나는 재원 목록입니다.
-          비활성 재원은 새 입력에서 감춰지지만 이미 저장된 금액은 남습니다.
+          이름을 바꾸거나 폐지할 때 적용 학년도를 지정합니다. 그 이전 학년도 조회는
+          기존 명칭을 따릅니다.
         </p>
 
         <div className="flex gap-2">
@@ -127,7 +126,10 @@ export function PlanFundSourceManager() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                void handleAdd();
+                if (newName.trim()) {
+                  setPending({ type: 'create', name: newName.trim() });
+                  setYear(years[years.length - 1] ?? year);
+                }
               }
             }}
             className="h-9 max-w-xs"
@@ -136,9 +138,12 @@ export function PlanFundSourceManager() {
             size="sm"
             variant="outline"
             disabled={busy || !newName.trim()}
-            onClick={() => void handleAdd()}
+            onClick={() => {
+              setPending({ type: 'create', name: newName.trim() });
+              setYear(years[years.length - 1] ?? year);
+            }}
           >
-            <Plus className="mr-1 h-4 w-4" /> 재원 추가
+            <Plus className="mr-1 h-4 w-4" /> 재원 신설
           </Button>
         </div>
 
@@ -151,21 +156,17 @@ export function PlanFundSourceManager() {
               <Input
                 defaultValue={fund.fundSourceName}
                 disabled={busy}
-                onBlur={(e) => void handleRename(fund, e.target.value)}
+                onBlur={(e) => {
+                  const name = e.target.value.trim();
+                  if (!name || name === fund.fundSourceName) return;
+                  setPending({ type: 'rename', fund, name });
+                  setYear(years[years.length - 1] ?? year);
+                }}
                 className="h-8 max-w-xs"
                 aria-label={`${fund.fundSourceName} 이름`}
               />
-              {!fund.isActive && <Badge variant="secondary">비활성</Badge>}
+              {!fund.isActive && <Badge variant="secondary">폐지</Badge>}
               <div className="ml-auto flex items-center gap-1">
-                <label className="mr-2 flex items-center gap-1.5 text-xs">
-                  <Switch
-                    checked={fund.isActive}
-                    disabled={busy}
-                    onCheckedChange={(v) => void handleToggleActive(fund, v)}
-                    aria-label={`${fund.fundSourceName} 사용 여부`}
-                  />
-                  사용
-                </label>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -191,10 +192,12 @@ export function PlanFundSourceManager() {
                   variant="ghost"
                   className="h-8 px-2 text-destructive hover:text-destructive"
                   disabled={busy}
-                  onClick={() => void handleDelete(fund)}
-                  title="삭제"
+                  onClick={() => {
+                    setPending({ type: 'abolish', fund });
+                    setYear(years[years.length - 1] ?? year);
+                  }}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  폐지
                 </Button>
               </div>
             </div>
@@ -206,6 +209,44 @@ export function PlanFundSourceManager() {
           )}
         </div>
       </CardContent>
+
+      <Dialog open={!!pending} onOpenChange={(v) => !v && setPending(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pending?.type === 'create'
+                ? '재원 신설'
+                : pending?.type === 'rename'
+                  ? '재원 수정'
+                  : '재원 폐지'}
+            </DialogTitle>
+            <DialogDescription>
+              적용 학년도부터 조회 화면에 반영됩니다. 그 이전은 기존 값을 유지합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-1.5">
+            <Label className="text-left">적용 학년도</Label>
+            <NativeSelect
+              value={String(year)}
+              onChange={(e) => setYear(Number(e.target.value))}
+            >
+              {years.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}학년도부터
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPending(null)}>
+              취소
+            </Button>
+            <Button disabled={busy} onClick={() => void submitPending()}>
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

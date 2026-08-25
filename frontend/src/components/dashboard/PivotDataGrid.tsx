@@ -1,9 +1,11 @@
 'use client';
 
 import { useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatNumber } from '@/lib/dataFormatters';
+import { logDataExport } from '@/lib/exportLog';
 import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 export function PivotDataGrid() {
   const pivot = useAnalysisStore((s) => s.pivot);
   const tableRef = useRef<HTMLTableElement>(null);
+  const pathname = usePathname();
 
   const hasData = pivot && pivot.rows.length > 0;
 
@@ -20,7 +23,18 @@ export function PivotDataGrid() {
     const worksheet = XLSX.utils.table_to_sheet(tableRef.current);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'IR_Pivot');
-    XLSX.writeFile(workbook, `ysu-ir-pivot-${Date.now()}.xlsx`);
+    const filename = `ysu-ir-pivot-${Date.now()}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+    logDataExport({
+      format: 'xlsx',
+      source: pathname.includes('competitiveness')
+        ? 'competitiveness-pivot'
+        : 'dashboard-pivot',
+      filename,
+      summary: pivot
+        ? `피벗 ${pivot.rows.length}행 · ${pivot.years.join(', ')}`
+        : undefined,
+    });
   };
 
   return (

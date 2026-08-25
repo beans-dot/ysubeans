@@ -272,7 +272,6 @@ export interface LoginLogEntry {
   success: boolean;
   ip: string | null;
   userAgent: string | null;
-  failReason: string | null;
   createdAt: string;
 }
 

@@ -23,13 +23,16 @@ import { JwtPayload } from '../auth/jwt-payload';
 import {
   CreateDepartmentDto,
   CreateFundSourceDto,
+  CreateSubtaskDto,
   KpiValueDto,
+  OptionalYearQueryDto,
   ReplaceSubtasksDto,
   UpdateDepartmentDto,
   UpdateFundSourceDto,
   UpdateGoalDto,
   UpdateKpiDto,
   UpdateStrategyDto,
+  UpdateSubtaskDto,
   UpdateTaskDto,
   UpdateVisionDto,
   UpsertBudgetDto,
@@ -52,8 +55,8 @@ export class StrategicPlanController {
   /* ── 대시보드: 로그인 사용자 전원 ── */
 
   @Get('tree')
-  getTree() {
-    return this.service.getTree();
+  getTree(@Query() query: OptionalYearQueryDto) {
+    return this.service.getTree(query.year);
   }
 
   @Get('compare')
@@ -62,8 +65,15 @@ export class StrategicPlanController {
   }
 
   @Get('fund-sources')
-  listFundSources(@Query('includeInactive') includeInactive?: string) {
-    return this.service.listFundSources(includeInactive === 'true');
+  listFundSources(
+    @Query('includeInactive') includeInactive?: string,
+    @Query('year') yearRaw?: string,
+  ) {
+    const year = yearRaw ? Number(yearRaw) : undefined;
+    return this.service.listFundSources(
+      includeInactive === 'true',
+      Number.isFinite(year) ? year : undefined,
+    );
   }
 
   @Get('evaluations')
@@ -92,27 +102,53 @@ export class StrategicPlanController {
   /* ── 관리자: 체계 ── */
 
   @Roles('admin')
+  @Get('changes')
+  listChanges() {
+    return this.service.listChanges();
+  }
+
+  @Roles('admin')
+  @Post('changes/:logId/rollback')
+  rollbackChange(
+    @Param('logId', ParseIntPipe) logId: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.rollbackChange(logId, user.sub);
+  }
+
+  @Roles('admin')
   @Post('goals')
-  createGoal(@Body() dto: UpsertGoalDto) {
-    return this.service.createGoal(dto);
+  createGoal(@Body() dto: UpsertGoalDto, @CurrentUser() user: JwtPayload) {
+    return this.service.createGoal(dto, user.sub);
   }
 
   @Roles('admin')
   @Put('goals/:goalId')
-  updateGoal(@Param('goalId') goalId: string, @Body() dto: UpdateGoalDto) {
-    return this.service.updateGoal(goalId, dto);
+  updateGoal(
+    @Param('goalId') goalId: string,
+    @Body() dto: UpdateGoalDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.updateGoal(goalId, dto, user.sub);
   }
 
   @Roles('admin')
   @Delete('goals/:goalId')
-  deleteGoal(@Param('goalId') goalId: string) {
-    return this.service.deleteGoal(goalId);
+  deleteGoal(
+    @Param('goalId') goalId: string,
+    @Query() query: YearQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.deleteGoal(goalId, query.year, user.sub);
   }
 
   @Roles('admin')
   @Post('strategies')
-  createStrategy(@Body() dto: UpsertStrategyDto) {
-    return this.service.createStrategy(dto);
+  createStrategy(
+    @Body() dto: UpsertStrategyDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.createStrategy(dto, user.sub);
   }
 
   @Roles('admin')
@@ -120,32 +156,74 @@ export class StrategicPlanController {
   updateStrategy(
     @Param('strategyId') strategyId: string,
     @Body() dto: UpdateStrategyDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.updateStrategy(strategyId, dto);
+    return this.service.updateStrategy(strategyId, dto, user.sub);
   }
 
   @Roles('admin')
   @Delete('strategies/:strategyId')
-  deleteStrategy(@Param('strategyId') strategyId: string) {
-    return this.service.deleteStrategy(strategyId);
+  deleteStrategy(
+    @Param('strategyId') strategyId: string,
+    @Query() query: YearQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.deleteStrategy(strategyId, query.year, user.sub);
   }
 
   @Roles('admin')
   @Post('tasks')
-  createTask(@Body() dto: UpsertTaskDto) {
-    return this.service.createTask(dto);
+  createTask(@Body() dto: UpsertTaskDto, @CurrentUser() user: JwtPayload) {
+    return this.service.createTask(dto, user.sub);
   }
 
   @Roles('admin')
   @Put('tasks/:taskCode')
-  updateTask(@Param('taskCode') taskCode: string, @Body() dto: UpdateTaskDto) {
-    return this.service.updateTask(taskCode, dto);
+  updateTask(
+    @Param('taskCode') taskCode: string,
+    @Body() dto: UpdateTaskDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.updateTask(taskCode, dto, user.sub);
   }
 
   @Roles('admin')
   @Delete('tasks/:taskCode')
-  deleteTask(@Param('taskCode') taskCode: string) {
-    return this.service.deleteTask(taskCode);
+  deleteTask(
+    @Param('taskCode') taskCode: string,
+    @Query() query: YearQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.deleteTask(taskCode, query.year, user.sub);
+  }
+
+  @Roles('admin')
+  @Post('subtasks')
+  createSubtask(
+    @Body() dto: CreateSubtaskDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.createSubtask(dto, user.sub);
+  }
+
+  @Roles('admin')
+  @Put('subtasks/:subtaskCode')
+  updateSubtask(
+    @Param('subtaskCode') subtaskCode: string,
+    @Body() dto: UpdateSubtaskDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.updateSubtask(subtaskCode, dto, user.sub);
+  }
+
+  @Roles('admin')
+  @Delete('subtasks/:subtaskCode')
+  deleteSubtask(
+    @Param('subtaskCode') subtaskCode: string,
+    @Query() query: YearQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.deleteSubtask(subtaskCode, query.year, user.sub);
   }
 
   @Roles('admin')
@@ -161,20 +239,28 @@ export class StrategicPlanController {
 
   @Roles('admin')
   @Post('kpis')
-  createKpi(@Body() dto: UpsertKpiDto) {
-    return this.service.createKpi(dto);
+  createKpi(@Body() dto: UpsertKpiDto, @CurrentUser() user: JwtPayload) {
+    return this.service.createKpi(dto, user.sub);
   }
 
   @Roles('admin')
   @Put('kpis/:kpiCode')
-  updateKpi(@Param('kpiCode') kpiCode: string, @Body() dto: UpdateKpiDto) {
-    return this.service.updateKpi(kpiCode, dto);
+  updateKpi(
+    @Param('kpiCode') kpiCode: string,
+    @Body() dto: UpdateKpiDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.updateKpi(kpiCode, dto, user.sub);
   }
 
   @Roles('admin')
   @Delete('kpis/:kpiCode')
-  deleteKpi(@Param('kpiCode') kpiCode: string) {
-    return this.service.deleteKpi(kpiCode);
+  deleteKpi(
+    @Param('kpiCode') kpiCode: string,
+    @Query() query: YearQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.deleteKpi(kpiCode, query.year, user.sub);
   }
 
   @Roles('admin')
@@ -202,8 +288,11 @@ export class StrategicPlanController {
 
   @Roles('admin')
   @Post('fund-sources')
-  createFundSource(@Body() dto: CreateFundSourceDto) {
-    return this.service.createFundSource(dto);
+  createFundSource(
+    @Body() dto: CreateFundSourceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.createFundSource(dto, user.sub);
   }
 
   @Roles('admin')
@@ -211,16 +300,19 @@ export class StrategicPlanController {
   updateFundSource(
     @Param('fundSourceId', ParseIntPipe) fundSourceId: number,
     @Body() dto: UpdateFundSourceDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.updateFundSource(fundSourceId, dto);
+    return this.service.updateFundSource(fundSourceId, dto, user.sub);
   }
 
   @Roles('admin')
   @Delete('fund-sources/:fundSourceId')
   deleteFundSource(
     @Param('fundSourceId', ParseIntPipe) fundSourceId: number,
+    @Query() query: YearQueryDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.deleteFundSource(fundSourceId);
+    return this.service.deleteFundSource(fundSourceId, query.year, user.sub);
   }
 
   /* ── 관리자: 부서 ── */

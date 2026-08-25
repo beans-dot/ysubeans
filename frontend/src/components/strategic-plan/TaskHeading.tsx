@@ -23,7 +23,7 @@ export function TaskHeading({
           titleClassName,
         )}
       >
-        <Badge variant="code">{task.taskCode}</Badge>
+        <Badge variant="code">{task.displayCode ?? task.taskCode}</Badge>
         <span>{task.taskName}</span>
       </span>
       {showMeta && (

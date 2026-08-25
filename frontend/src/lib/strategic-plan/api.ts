@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 import type {
   SpBudget,
+  SpChangeLog,
   SpCompare,
   SpDepartment,
   SpEvaluation,
@@ -11,8 +12,10 @@ import type {
   SpVision,
 } from './types';
 
-export async function fetchSpTree() {
-  const { data } = await api.get<SpTree>('/strategic-plan/tree');
+export async function fetchSpTree(year?: number) {
+  const { data } = await api.get<SpTree>('/strategic-plan/tree', {
+    params: year ? { year } : undefined,
+  });
   return data;
 }
 
@@ -21,10 +24,15 @@ export async function fetchSpCompare() {
   return data;
 }
 
-export async function fetchSpFundSources(includeInactive = false) {
+export async function fetchSpFundSources(includeInactive = false, year?: number) {
   const { data } = await api.get<SpFundSource[]>(
     '/strategic-plan/fund-sources',
-    { params: includeInactive ? { includeInactive: 'true' } : undefined },
+    {
+      params: {
+        ...(includeInactive ? { includeInactive: 'true' } : {}),
+        ...(year ? { year } : {}),
+      },
+    },
   );
   return data;
 }
@@ -96,23 +104,35 @@ export async function saveSpKpiTarget(
 
 /* ── 관리자 ── */
 
+export async function fetchSpChanges() {
+  const { data } = await api.get<SpChangeLog[]>('/strategic-plan/changes');
+  return data;
+}
+
+export async function rollbackSpChange(logId: number) {
+  await api.post(`/strategic-plan/changes/${logId}/rollback`);
+}
+
 export async function createSpGoal(payload: {
   goalId: string;
   goalNo?: number;
   goalName: string;
+  year: number;
 }) {
   await api.post('/strategic-plan/goals', payload);
 }
 
 export async function updateSpGoal(
   goalId: string,
-  payload: { goalNo?: number; goalName?: string },
+  payload: { goalNo?: number; goalName?: string; year: number },
 ) {
   await api.put(`/strategic-plan/goals/${encodeURIComponent(goalId)}`, payload);
 }
 
-export async function deleteSpGoal(goalId: string) {
-  await api.delete(`/strategic-plan/goals/${encodeURIComponent(goalId)}`);
+export async function deleteSpGoal(goalId: string, year: number) {
+  await api.delete(`/strategic-plan/goals/${encodeURIComponent(goalId)}`, {
+    params: { year },
+  });
 }
 
 export async function createSpStrategy(payload: {
@@ -120,13 +140,19 @@ export async function createSpStrategy(payload: {
   goalId: string;
   strategyName: string;
   displayOrder?: number;
+  year: number;
 }) {
   await api.post('/strategic-plan/strategies', payload);
 }
 
 export async function updateSpStrategy(
   strategyId: string,
-  payload: { goalId?: string; strategyName?: string; displayOrder?: number },
+  payload: {
+    goalId?: string;
+    strategyName?: string;
+    displayOrder?: number;
+    year: number;
+  },
 ) {
   await api.put(
     `/strategic-plan/strategies/${encodeURIComponent(strategyId)}`,
@@ -134,9 +160,10 @@ export async function updateSpStrategy(
   );
 }
 
-export async function deleteSpStrategy(strategyId: string) {
+export async function deleteSpStrategy(strategyId: string, year: number) {
   await api.delete(
     `/strategic-plan/strategies/${encodeURIComponent(strategyId)}`,
+    { params: { year } },
   );
 }
 
@@ -147,7 +174,9 @@ export async function createSpTask(payload: {
   isSpecialized?: boolean;
   primaryDept?: string;
   relatedDepts?: string[];
+  hangulCode?: string;
   displayOrder?: number;
+  year: number;
 }) {
   await api.post('/strategic-plan/tasks', payload);
 }
@@ -160,39 +189,91 @@ export async function updateSpTask(
     isSpecialized?: boolean;
     primaryDept?: string;
     relatedDepts?: string[];
+    hangulCode?: string;
     displayOrder?: number;
+    year: number;
   },
 ) {
   await api.put(`/strategic-plan/tasks/${encodeURIComponent(taskCode)}`, payload);
 }
 
-export async function deleteSpTask(taskCode: string) {
-  await api.delete(`/strategic-plan/tasks/${encodeURIComponent(taskCode)}`);
+export async function deleteSpTask(taskCode: string, year: number) {
+  await api.delete(`/strategic-plan/tasks/${encodeURIComponent(taskCode)}`, {
+    params: { year },
+  });
 }
 
-export async function replaceSpSubtasks(
-  taskCode: string,
-  subtasks: Array<{ subtaskCode: string; subtaskName: string }>,
+export async function createSpSubtask(payload: {
+  taskCode: string;
+  hangulCode?: string;
+  seqNo?: number;
+  subtaskName: string;
+  purpose?: string;
+  method?: string;
+  year: number;
+}) {
+  await api.post('/strategic-plan/subtasks', payload);
+}
+
+export async function updateSpSubtask(
+  subtaskCode: string,
+  payload: {
+    subtaskName?: string;
+    hangulCode?: string;
+    purpose?: string | null;
+    method?: string | null;
+    year: number;
+  },
 ) {
   await api.put(
-    `/strategic-plan/tasks/${encodeURIComponent(taskCode)}/subtasks`,
-    { subtasks },
+    `/strategic-plan/subtasks/${encodeURIComponent(subtaskCode)}`,
+    payload,
   );
+}
+
+export async function deleteSpSubtask(subtaskCode: string, year: number) {
+  await api.delete(
+    `/strategic-plan/subtasks/${encodeURIComponent(subtaskCode)}`,
+    { params: { year } },
+  );
+}
+
+export async function createSpKpi(payload: {
+  kpiCode: string;
+  kpiName: string;
+  taskCode: string;
+  unit?: string;
+  primaryDept?: string;
+  baseline?: number | null;
+  baselineRef?: string;
+  formula?: string;
+  year: number;
+}) {
+  await api.post('/strategic-plan/kpis', payload);
 }
 
 export async function updateSpKpi(
   kpiCode: string,
-  payload: Partial<Pick<SpKpi, 'kpiName' | 'unit' | 'baseline' | 'formula'>> & {
+  payload: Partial<
+    Pick<SpKpi, 'kpiName' | 'unit' | 'baseline' | 'formula' | 'primaryDept'>
+  > & {
     taskCode?: string;
     baselineRef?: string;
     source?: string;
+    year: number;
   },
 ) {
   await api.put(`/strategic-plan/kpis/${encodeURIComponent(kpiCode)}`, payload);
 }
 
-export async function createSpFundSource(fundSourceName: string) {
-  await api.post('/strategic-plan/fund-sources', { fundSourceName });
+export async function deleteSpKpi(kpiCode: string, year: number) {
+  await api.delete(`/strategic-plan/kpis/${encodeURIComponent(kpiCode)}`, {
+    params: { year },
+  });
+}
+
+export async function createSpFundSource(fundSourceName: string, year: number) {
+  await api.post('/strategic-plan/fund-sources', { fundSourceName, year });
 }
 
 export async function updateSpFundSource(
@@ -201,14 +282,16 @@ export async function updateSpFundSource(
     fundSourceName?: string;
     displayOrder?: number;
     isActive?: boolean;
+    year?: number;
   },
 ) {
   await api.put(`/strategic-plan/fund-sources/${fundSourceId}`, payload);
 }
 
-export async function deleteSpFundSource(fundSourceId: number) {
-  const { data } = await api.delete<{ deactivated: boolean; used: number }>(
+export async function deleteSpFundSource(fundSourceId: number, year: number) {
+  const { data } = await api.delete<{ ok: boolean }>(
     `/strategic-plan/fund-sources/${fundSourceId}`,
+    { params: { year } },
   );
   return data;
 }

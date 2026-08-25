@@ -104,7 +104,7 @@ export function StrategicPlanDashboard() {
   if (!tree || !derived || !filtered) return null;
 
   const showYear = SP_YEAR_VIEWS.includes(view);
-  const lastYear = tree.years[tree.years.length - 1] ?? year;
+  const lastYear = year;
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">

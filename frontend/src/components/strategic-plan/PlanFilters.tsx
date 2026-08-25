@@ -51,7 +51,7 @@ export function PlanFilters({
           <option value="">전체</option>
           {goals.map((goal) => (
             <option key={goal.goalId} value={goal.goalId}>
-              {goal.goalId}. {goal.goalName}
+              {goal.displayCode ?? goal.goalId}. {goal.goalName}
             </option>
           ))}
         </NativeSelect>

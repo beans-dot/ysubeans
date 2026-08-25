@@ -23,6 +23,15 @@ export class YearQueryDto {
   year: number;
 }
 
+export class OptionalYearQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year?: number;
+}
+
 export class UpsertGoalDto {
   @IsString()
   @MaxLength(10)
@@ -35,6 +44,12 @@ export class UpsertGoalDto {
   @IsString()
   @MaxLength(300)
   goalName: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class UpdateGoalDto {
@@ -46,6 +61,12 @@ export class UpdateGoalDto {
   @IsString()
   @MaxLength(300)
   goalName?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class UpsertStrategyDto {
@@ -64,6 +85,12 @@ export class UpsertStrategyDto {
   @IsOptional()
   @IsInt()
   displayOrder?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class UpdateStrategyDto {
@@ -80,6 +107,12 @@ export class UpdateStrategyDto {
   @IsOptional()
   @IsInt()
   displayOrder?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class UpsertTaskDto {
@@ -113,6 +146,17 @@ export class UpsertTaskDto {
   @IsOptional()
   @IsInt()
   displayOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  hangulCode?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class UpdateTaskDto {
@@ -144,6 +188,17 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsInt()
   displayOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  hangulCode?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class SubtaskItemDto {
@@ -203,6 +258,17 @@ export class UpsertKpiDto {
   @IsOptional()
   @IsInt()
   displayOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  primaryDept?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class UpdateKpiDto {
@@ -241,6 +307,17 @@ export class UpdateKpiDto {
   @IsOptional()
   @IsInt()
   displayOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  primaryDept?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class KpiValueDto {
@@ -382,6 +459,12 @@ export class CreateFundSourceDto {
   @IsOptional()
   @IsInt()
   displayOrder?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class UpdateFundSourceDto {
@@ -397,6 +480,72 @@ export class UpdateFundSourceDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year?: number;
+}
+
+export class CreateSubtaskDto {
+  @IsString()
+  @MaxLength(60)
+  taskCode: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  hangulCode?: string;
+
+  @IsOptional()
+  @IsInt()
+  seqNo?: number;
+
+  @IsString()
+  @MaxLength(400)
+  subtaskName: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: string;
+
+  @IsOptional()
+  @IsString()
+  method?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
+}
+
+export class UpdateSubtaskDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
+  subtaskName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  hangulCode?: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: string | null;
+
+  @IsOptional()
+  @IsString()
+  method?: string | null;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
 }
 
 export class CreateDepartmentDto {

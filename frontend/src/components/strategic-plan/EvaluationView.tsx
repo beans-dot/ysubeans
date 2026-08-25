@@ -121,7 +121,9 @@ function EvalKpiRow({
 
   return (
     <tr className="border-b last:border-b-0">
-      <td className="px-2 py-1.5">{kpi.kpiCode}</td>
+      <td className="px-2 py-1.5">
+        <Badge variant="code">{kpi.displayCode ?? kpi.kpiCode}</Badge>
+      </td>
       <td className="px-2 py-1.5">{kpi.kpiName}</td>
       <td className="px-2 py-1.5 text-muted-foreground">{kpi.unit ?? ''}</td>
       <td className="px-2 py-1.5 text-right tabular-nums">
@@ -466,7 +468,9 @@ const EvaluationCard = memo(function EvaluationCard({
                       unitCode={unit.code}
                       title={
                         <>
-                          {unit.code}
+                          <Badge variant="code">
+                            {unit.displayCode ?? unit.code}
+                          </Badge>
                           <span className="ml-2 font-normal">{unit.name}</span>
                         </>
                       }
@@ -483,7 +487,7 @@ const EvaluationCard = memo(function EvaluationCard({
                         })
                       }
                     />
-                    <IrBlock irMode={irMode} label={`${unit.code} IR 평가`}>
+                    <IrBlock irMode={irMode} label={`${unit.displayCode ?? unit.code} IR 평가`}>
                       <Textarea
                         rows={3}
                         value={ir.taskComments?.[unit.code] ?? ''}

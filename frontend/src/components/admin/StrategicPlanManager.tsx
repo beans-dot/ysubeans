@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { fetchSpTree } from '@/lib/strategic-plan/api';
 import type { SpTree } from '@/lib/strategic-plan/types';
-import { PlanDeptManager } from './strategic-plan/PlanDeptManager';
+import { PlanChangeLogManager } from './strategic-plan/PlanChangeLogManager';
 import { PlanFundSourceManager } from './strategic-plan/PlanFundSourceManager';
 import { PlanKpiManager } from './strategic-plan/PlanKpiManager';
 import { PlanStructureManager } from './strategic-plan/PlanStructureManager';
@@ -51,29 +51,38 @@ export function StrategicPlanManager() {
   }
 
   return (
-    <Tabs defaultValue="structure">
-      <TabsList className="mb-4 h-auto flex-wrap justify-start">
-        <TabsTrigger value="structure">체계</TabsTrigger>
-        <TabsTrigger value="depts">부서관리</TabsTrigger>
-        <TabsTrigger value="kpi">KPI 목표·실적</TabsTrigger>
-        <TabsTrigger value="funds">재원 유형</TabsTrigger>
-      </TabsList>
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold">중장기발전계획</h2>
+        <p className="text-sm text-muted-foreground">
+          최신 전략체계를 관리합니다. 과거 내용은 변경이력과 성과관리 연도 조회로
+          확인합니다.
+        </p>
+      </div>
+      <Tabs defaultValue="structure">
+        <TabsList className="mb-4 h-auto flex-wrap justify-start">
+          <TabsTrigger value="structure">전략체계</TabsTrigger>
+          <TabsTrigger value="kpi">KPI</TabsTrigger>
+          <TabsTrigger value="changes">변경이력</TabsTrigger>
+          <TabsTrigger value="funds">재원 유형</TabsTrigger>
+        </TabsList>
 
-      <TabsContent value="structure">
-        <PlanStructureManager tree={tree} reload={reload} />
-      </TabsContent>
+        <TabsContent value="structure">
+          <PlanStructureManager tree={tree} reload={reload} />
+        </TabsContent>
 
-      <TabsContent value="depts">
-        <PlanDeptManager reload={reload} />
-      </TabsContent>
+        <TabsContent value="kpi">
+          <PlanKpiManager tree={tree} reload={reload} />
+        </TabsContent>
 
-      <TabsContent value="kpi">
-        <PlanKpiManager tree={tree} reload={reload} />
-      </TabsContent>
+        <TabsContent value="changes">
+          <PlanChangeLogManager reload={reload} />
+        </TabsContent>
 
-      <TabsContent value="funds">
-        <PlanFundSourceManager />
-      </TabsContent>
-    </Tabs>
+        <TabsContent value="funds">
+          <PlanFundSourceManager />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

@@ -103,6 +103,7 @@ function BudgetTaskCard({
               taskCode={task.taskCode}
               unitCode={unit.code}
               unitName={unit.name}
+              displayCode={unit.displayCode}
               fundSources={fundSources}
               year={year}
               readOnly={readOnly}

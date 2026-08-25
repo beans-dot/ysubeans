@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { extname, join } from 'path';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import {
   IrSpCompareData,
@@ -29,12 +29,14 @@ import {
 import {
   CreateDepartmentDto,
   CreateFundSourceDto,
+  CreateSubtaskDto,
   ReplaceSubtasksDto,
   UpdateDepartmentDto,
   UpdateFundSourceDto,
   UpdateGoalDto,
   UpdateKpiDto,
   UpdateStrategyDto,
+  UpdateSubtaskDto,
   UpdateTaskDto,
   UpdateVisionDto,
   UpsertBudgetDto,
@@ -58,6 +60,16 @@ import {
   SP_SURVEY_PLAN_GRADES,
   SP_YEARS,
 } from './strategic-plan.constants';
+import {
+  displayGoal,
+  displayKpi,
+  displayStrategy,
+  displaySubtask,
+  displayTask,
+  parseKpiCode,
+  parseTaskCode,
+} from './sp-codes';
+import { SpStructureService } from './sp-structure.service';
 
 const VISION_IMAGE_DIR = join(process.cwd(), 'uploads', 'sp-vision');
 const VISION_IMAGE_MIME: Record<string, string> = {
@@ -81,11 +93,18 @@ function mimeToExt(mime: string): string | null {
 export interface SpSubtaskNode {
   subtaskId: number;
   subtaskCode: string;
+  hangulCode: string;
+  seqNo: number;
+  displayCode: string;
   subtaskName: string;
+  purpose: string | null;
+  method: string | null;
 }
 
 export interface SpTaskNode {
   taskCode: string;
+  hangulCode: string;
+  displayCode: string;
   taskName: string;
   strategyId: string;
   goalId: string;
@@ -98,6 +117,7 @@ export interface SpTaskNode {
 
 export interface SpStrategyNode {
   strategyId: string;
+  displayCode: string;
   strategyName: string;
   goalId: string;
   tasks: SpTaskNode[];
@@ -105,6 +125,7 @@ export interface SpStrategyNode {
 
 export interface SpGoalNode {
   goalId: string;
+  displayCode: string;
   goalNo: number;
   goalName: string;
   strategies: SpStrategyNode[];
@@ -112,11 +133,13 @@ export interface SpGoalNode {
 
 export interface SpKpiNode {
   kpiCode: string;
+  displayCode: string;
   kpiName: string;
   unit: string | null;
   taskCode: string | null;
   strategyId: string | null;
   goalId: string | null;
+  primaryDept: string | null;
   baseline: number | null;
   baselineRef: string | null;
   formula: string | null;
@@ -164,6 +187,7 @@ export class StrategicPlanService implements OnModuleInit {
     private readonly departmentRepo: Repository<IrSpDepartment>,
     @InjectRepository(IrSpTaskBudget)
     private readonly budgetRepo: Repository<IrSpTaskBudget>,
+    private readonly structure: SpStructureService,
   ) {}
 
   async onModuleInit() {
@@ -192,11 +216,18 @@ export class StrategicPlanService implements OnModuleInit {
     } catch {
       // 최초 기동 등 테이블이 아직 없으면 synchronize가 생성한다.
     }
+    try {
+      await this.structure.migrateLegacyCodes();
+    } catch {
+      // 컬럼 추가 전 기동이면 synchronize 이후 다음 기동에서 처리
+    }
   }
 
   /* ── 대시보드 조회 ── */
 
-  async getTree() {
+  async getTree(year?: number) {
+    const asOf = year ?? SP_YEARS[SP_YEARS.length - 1];
+    const latest = year == null;
     const [vision, goals, strategies, tasks, subtasks, kpis, targets, results] =
       await Promise.all([
         this.visionRepo.find({ order: { visionId: 'ASC' }, take: 1 }),
@@ -213,19 +244,150 @@ export class StrategicPlanService implements OnModuleInit {
         this.resultRepo.find(),
       ]);
 
+    const liveGoals = goals.filter((g) =>
+      latest
+        ? g.abolishedFrom == null
+        : this.structure.isActiveAt(g.effectiveFrom, g.abolishedFrom, asOf),
+    );
+    const liveStrategies = strategies.filter((s) =>
+      latest
+        ? s.abolishedFrom == null
+        : this.structure.isActiveAt(s.effectiveFrom, s.abolishedFrom, asOf),
+    );
+    const liveTasks = tasks.filter((t) =>
+      latest
+        ? t.abolishedFrom == null
+        : this.structure.isActiveAt(t.effectiveFrom, t.abolishedFrom, asOf),
+    );
+    const liveSubtasks = subtasks.filter((s) =>
+      latest
+        ? s.abolishedFrom == null
+        : this.structure.isActiveAt(s.effectiveFrom, s.abolishedFrom, asOf),
+    );
+    const liveKpis = kpis.filter((k) =>
+      latest
+        ? k.abolishedFrom == null
+        : this.structure.isActiveAt(k.effectiveFrom, k.abolishedFrom, asOf),
+    );
+
+    const overlayGoal = async (row: IrSpGoal) => {
+      const payload = year
+        ? await this.structure.overlayPayload('goal', row.goalId, asOf)
+        : null;
+      return {
+        goalId: row.goalId,
+        displayCode: displayGoal(row.goalId),
+        goalNo: Number(payload?.goalNo ?? row.goalNo),
+        goalName: String(payload?.goalName ?? row.goalName),
+      };
+    };
+    const overlayStrategy = async (row: IrSpStrategy) => {
+      const payload = year
+        ? await this.structure.overlayPayload('strategy', row.strategyId, asOf)
+        : null;
+      return {
+        strategyId: row.strategyId,
+        displayCode: displayStrategy(row.strategyId),
+        strategyName: String(payload?.strategyName ?? row.strategyName),
+        goalId: String(payload?.goalId ?? row.goalId),
+      };
+    };
+    const overlayTask = async (row: IrSpTask) => {
+      const payload = year
+        ? await this.structure.overlayPayload('task', row.taskCode, asOf)
+        : null;
+      const hangul = String(payload?.hangulCode ?? row.hangulCode ?? '');
+      return {
+        taskCode: row.taskCode,
+        hangulCode: hangul,
+        displayCode: displayTask(row.taskCode, hangul),
+        taskName: String(payload?.taskName ?? row.taskName),
+        strategyId: String(payload?.strategyId ?? row.strategyId),
+        goalId: String(payload?.goalId ?? row.goalId),
+        isSpecialized: Boolean(payload?.isSpecialized ?? row.isSpecialized),
+        primaryDept:
+          payload?.primaryDept === undefined
+            ? row.primaryDept
+            : (payload.primaryDept as string | null),
+        relatedDepts: Array.isArray(payload?.relatedDepts)
+          ? (payload.relatedDepts as string[])
+          : (row.relatedDepts ?? []),
+      };
+    };
+    const overlaySubtask = async (row: IrSpSubtask) => {
+      const payload = year
+        ? await this.structure.overlayPayload('subtask', row.subtaskCode, asOf)
+        : null;
+      const hangul = String(payload?.hangulCode ?? row.hangulCode ?? '');
+      const seq = Number(payload?.seqNo ?? row.seqNo ?? 1);
+      return {
+        subtaskId: row.subtaskId,
+        subtaskCode: row.subtaskCode,
+        hangulCode: hangul,
+        seqNo: seq,
+        displayCode: displaySubtask(row.taskCode, seq, hangul),
+        subtaskName: String(payload?.subtaskName ?? row.subtaskName),
+        purpose:
+          payload?.purpose === undefined
+            ? row.purpose
+            : (payload.purpose as string | null),
+        method:
+          payload?.method === undefined
+            ? row.method
+            : (payload.method as string | null),
+      };
+    };
+    const overlayKpi = async (row: IrSpKpi) => {
+      const payload = year
+        ? await this.structure.overlayPayload('kpi', row.kpiCode, asOf)
+        : null;
+      return {
+        kpiCode: row.kpiCode,
+        displayCode: displayKpi(row.kpiCode),
+        kpiName: String(payload?.kpiName ?? row.kpiName),
+        unit:
+          payload?.unit === undefined ? row.unit : (payload.unit as string | null),
+        taskCode: (payload?.taskCode as string | null | undefined) ?? row.taskCode,
+        strategyId:
+          (payload?.strategyId as string | null | undefined) ?? row.strategyId,
+        goalId: (payload?.goalId as string | null | undefined) ?? row.goalId,
+        primaryDept:
+          payload?.primaryDept === undefined
+            ? row.primaryDept
+            : (payload.primaryDept as string | null),
+        baseline:
+          payload?.baseline === undefined
+            ? row.baseline
+            : (payload.baseline as number | null),
+        baselineRef:
+          payload?.baselineRef === undefined
+            ? row.baselineRef
+            : (payload.baselineRef as string | null),
+        formula:
+          payload?.formula === undefined
+            ? row.formula
+            : (payload.formula as string | null),
+        source: row.source,
+      };
+    };
+
+    const goalViews = await Promise.all(liveGoals.map(overlayGoal));
+    const strategyViews = await Promise.all(liveStrategies.map(overlayStrategy));
+    const taskViews = await Promise.all(liveTasks.map(overlayTask));
+    const subtaskViews = await Promise.all(liveSubtasks.map(overlaySubtask));
+    const kpiViews = await Promise.all(liveKpis.map(overlayKpi));
+
     const subtasksByTask = new Map<string, SpSubtaskNode[]>();
-    for (const s of subtasks) {
-      const list = subtasksByTask.get(s.taskCode) ?? [];
-      list.push({
-        subtaskId: s.subtaskId,
-        subtaskCode: s.subtaskCode,
-        subtaskName: s.subtaskName,
-      });
-      subtasksByTask.set(s.taskCode, list);
+    for (const s of subtaskViews) {
+      const parent = liveSubtasks.find((x) => x.subtaskId === s.subtaskId);
+      const taskCode = parent?.taskCode ?? '';
+      const list = subtasksByTask.get(taskCode) ?? [];
+      list.push(s);
+      subtasksByTask.set(taskCode, list);
     }
 
     const kpiCodesByTask = new Map<string, string[]>();
-    for (const k of kpis) {
+    for (const k of kpiViews) {
       if (!k.taskCode) continue;
       const list = kpiCodesByTask.get(k.taskCode) ?? [];
       list.push(k.kpiCode);
@@ -245,43 +407,24 @@ export class StrategicPlanService implements OnModuleInit {
       resultsByKpi.set(r.kpiCode, map);
     }
 
-    const taskNodes: SpTaskNode[] = tasks.map((t) => ({
-      taskCode: t.taskCode,
-      taskName: t.taskName,
-      strategyId: t.strategyId,
-      goalId: t.goalId,
-      isSpecialized: t.isSpecialized,
-      primaryDept: t.primaryDept,
-      relatedDepts: t.relatedDepts ?? [],
+    const taskNodes: SpTaskNode[] = taskViews.map((t) => ({
+      ...t,
       subtasks: subtasksByTask.get(t.taskCode) ?? [],
       kpiCodes: kpiCodesByTask.get(t.taskCode) ?? [],
     }));
 
-    const goalNodes: SpGoalNode[] = goals.map((g) => ({
-      goalId: g.goalId,
-      goalNo: g.goalNo,
-      goalName: g.goalName,
-      strategies: strategies
+    const goalNodes: SpGoalNode[] = goalViews.map((g) => ({
+      ...g,
+      strategies: strategyViews
         .filter((s) => s.goalId === g.goalId)
         .map((s) => ({
-          strategyId: s.strategyId,
-          strategyName: s.strategyName,
-          goalId: s.goalId,
+          ...s,
           tasks: taskNodes.filter((t) => t.strategyId === s.strategyId),
         })),
     }));
 
-    const kpiNodes: SpKpiNode[] = kpis.map((k) => ({
-      kpiCode: k.kpiCode,
-      kpiName: k.kpiName,
-      unit: k.unit,
-      taskCode: k.taskCode,
-      strategyId: k.strategyId,
-      goalId: k.goalId,
-      baseline: k.baseline,
-      baselineRef: k.baselineRef,
-      formula: k.formula,
-      source: k.source,
+    const kpiNodes: SpKpiNode[] = kpiViews.map((k) => ({
+      ...k,
       targets: targetsByKpi.get(k.kpiCode) ?? {},
       results: resultsByKpi.get(k.kpiCode) ?? {},
     }));
@@ -290,6 +433,7 @@ export class StrategicPlanService implements OnModuleInit {
 
     return {
       years: [...SP_YEARS],
+      asOfYear: latest ? null : asOf,
       scales: {
         deptGrades: [...SP_DEPT_GRADES],
         irGrades: [...SP_IR_GRADES],
@@ -301,6 +445,7 @@ export class StrategicPlanService implements OnModuleInit {
       kpis: kpiNodes,
     };
   }
+
 
   async getCompare() {
     const rows = await this.compareRepo.find({
@@ -337,11 +482,45 @@ export class StrategicPlanService implements OnModuleInit {
     };
   }
 
-  listFundSources(includeInactive = false) {
-    return this.fundSourceRepo.find({
-      where: includeInactive ? {} : { isActive: true },
+  async listFundSources(includeInactive = false, year?: number) {
+    const rows = await this.fundSourceRepo.find({
       order: { displayOrder: 'ASC', fundSourceId: 'ASC' },
     });
+    const live = rows.filter((f) => {
+      const active =
+        year == null
+          ? f.abolishedFrom == null
+          : this.structure.isActiveAt(f.effectiveFrom, f.abolishedFrom, year);
+      if (!active) return false;
+      if (includeInactive) return true;
+      return f.isActive;
+    });
+    const out: Array<{
+      fundSourceId: number;
+      fundSourceName: string;
+      displayOrder: number;
+      isActive: boolean;
+      effectiveFrom: number;
+      abolishedFrom: number | null;
+    }> = [];
+    for (const row of live) {
+      const payload = year
+        ? await this.structure.overlayPayload(
+            'fund',
+            String(row.fundSourceId),
+            year,
+          )
+        : null;
+      out.push({
+        fundSourceId: row.fundSourceId,
+        fundSourceName: String(payload?.fundSourceName ?? row.fundSourceName),
+        displayOrder: row.displayOrder,
+        isActive: row.isActive,
+        effectiveFrom: row.effectiveFrom,
+        abolishedFrom: row.abolishedFrom,
+      });
+    }
+    return out;
   }
 
   async listDepartments() {
@@ -492,165 +671,144 @@ export class StrategicPlanService implements OnModuleInit {
     return this.goalRepo.find({ order: { goalNo: 'ASC', goalId: 'ASC' } });
   }
 
-  async createGoal(dto: UpsertGoalDto) {
-    const exists = await this.goalRepo.findOne({
-      where: { goalId: dto.goalId },
-    });
-    if (exists) {
-      throw new BadRequestException('같은 코드의 발전전략이 이미 있습니다.');
-    }
-    return this.goalRepo.save(
-      this.goalRepo.create({
-        goalId: dto.goalId,
-        goalNo: dto.goalNo ?? 0,
-        goalName: dto.goalName,
-      }),
+  async createGoal(dto: UpsertGoalDto, userId: string) {
+    return this.structure.createGoal(
+      { alphaCode: dto.goalId, name: dto.goalName, year: dto.year },
+      userId,
     );
   }
 
-  async updateGoal(goalId: string, dto: UpdateGoalDto) {
-    const goal = await this.goalRepo.findOne({ where: { goalId } });
-    if (!goal) throw new NotFoundException('발전전략을 찾을 수 없습니다.');
-    if (dto.goalNo !== undefined) goal.goalNo = dto.goalNo;
-    if (dto.goalName !== undefined) goal.goalName = dto.goalName;
-    return this.goalRepo.save(goal);
+  async updateGoal(goalId: string, dto: UpdateGoalDto, userId: string) {
+    return this.structure.updateNode(
+      {
+        kind: 'goal',
+        lineageId: goalId,
+        year: dto.year,
+        patch: { goalName: dto.goalName },
+      },
+      userId,
+    );
   }
 
-  async deleteGoal(goalId: string) {
-    const used = await this.strategyRepo.count({ where: { goalId } });
-    if (used > 0) {
-      throw new BadRequestException(
-        `전략과제 ${used}건이 속해 있어 삭제할 수 없습니다.`,
-      );
-    }
-    await this.goalRepo.delete(goalId);
-    return { ok: true as const };
+  async deleteGoal(goalId: string, year: number, userId: string) {
+    return this.structure.abolishNode(
+      { kind: 'goal', lineageId: goalId, year },
+      userId,
+    );
   }
 
-  async createStrategy(dto: UpsertStrategyDto) {
-    const exists = await this.strategyRepo.findOne({
-      where: { strategyId: dto.strategyId },
-    });
-    if (exists) {
-      throw new BadRequestException('같은 코드의 전략과제가 이미 있습니다.');
-    }
-    await this.assertGoalExists(dto.goalId);
-    return this.strategyRepo.save(
-      this.strategyRepo.create({
+  async createStrategy(dto: UpsertStrategyDto, userId: string) {
+    return this.structure.createStrategy(
+      {
+        alphaCode: dto.strategyId,
+        goalId: dto.goalId,
+        name: dto.strategyName,
+        year: dto.year,
+      },
+      userId,
+    );
+  }
+
+  async updateStrategy(
+    strategyId: string,
+    dto: UpdateStrategyDto,
+    userId: string,
+  ) {
+    return this.structure.updateNode(
+      {
+        kind: 'strategy',
+        lineageId: strategyId,
+        year: dto.year,
+        patch: { strategyName: dto.strategyName },
+      },
+      userId,
+    );
+  }
+
+  async deleteStrategy(strategyId: string, year: number, userId: string) {
+    return this.structure.abolishNode(
+      { kind: 'strategy', lineageId: strategyId, year },
+      userId,
+    );
+  }
+
+  async createTask(dto: UpsertTaskDto, userId: string) {
+    const parsed = parseTaskCode(dto.taskCode);
+    return this.structure.createTask(
+      {
+        alphaCode: parsed.alphaCode,
+        hangulCode: dto.hangulCode || parsed.hangulCode,
+        name: dto.taskName,
         strategyId: dto.strategyId,
-        goalId: dto.goalId,
-        strategyName: dto.strategyName,
-        displayOrder: dto.displayOrder ?? 0,
-      }),
+        year: dto.year,
+        isSpecialized: dto.isSpecialized,
+        primaryDept: dto.primaryDept,
+      },
+      userId,
     );
   }
 
-  async updateStrategy(strategyId: string, dto: UpdateStrategyDto) {
-    const strategy = await this.strategyRepo.findOne({
-      where: { strategyId },
-    });
-    if (!strategy) throw new NotFoundException('전략과제를 찾을 수 없습니다.');
-    if (dto.goalId !== undefined) {
-      await this.assertGoalExists(dto.goalId);
-      strategy.goalId = dto.goalId;
-      await this.taskRepo.update({ strategyId }, { goalId: dto.goalId });
-      await this.kpiRepo.update({ strategyId }, { goalId: dto.goalId });
-    }
-    if (dto.strategyName !== undefined) {
-      strategy.strategyName = dto.strategyName;
-    }
-    if (dto.displayOrder !== undefined) {
-      strategy.displayOrder = dto.displayOrder;
-    }
-    return this.strategyRepo.save(strategy);
+  async updateTask(taskCode: string, dto: UpdateTaskDto, userId: string) {
+    const patch: Record<string, unknown> = {};
+    if (dto.taskName !== undefined) patch.taskName = dto.taskName;
+    if (dto.hangulCode !== undefined) patch.hangulCode = dto.hangulCode;
+    if (dto.isSpecialized !== undefined) patch.isSpecialized = dto.isSpecialized;
+    if (dto.primaryDept !== undefined) patch.primaryDept = dto.primaryDept;
+    if (dto.relatedDepts !== undefined) patch.relatedDepts = dto.relatedDepts;
+    return this.structure.updateNode(
+      { kind: 'task', lineageId: taskCode, year: dto.year, patch },
+      userId,
+    );
   }
 
-  async deleteStrategy(strategyId: string) {
-    const used = await this.taskRepo.count({ where: { strategyId } });
-    if (used > 0) {
-      throw new BadRequestException(
-        `실행과제 ${used}건이 속해 있어 삭제할 수 없습니다.`,
-      );
-    }
-    await this.strategyRepo.delete(strategyId);
-    return { ok: true as const };
+  async deleteTask(taskCode: string, year: number, userId: string) {
+    return this.structure.abolishNode(
+      { kind: 'task', lineageId: taskCode, year },
+      userId,
+    );
   }
 
-  async createTask(dto: UpsertTaskDto) {
-    const exists = await this.taskRepo.findOne({
-      where: { taskCode: dto.taskCode },
-    });
-    if (exists) {
-      throw new BadRequestException('같은 코드의 실행과제가 이미 있습니다.');
-    }
-    const strategy = await this.strategyRepo.findOne({
-      where: { strategyId: dto.strategyId },
-    });
-    if (!strategy) throw new NotFoundException('전략과제를 찾을 수 없습니다.');
-    return this.taskRepo.save(
-      this.taskRepo.create({
+  async createSubtask(dto: CreateSubtaskDto, userId: string) {
+    return this.structure.createSubtask(
+      {
         taskCode: dto.taskCode,
-        taskName: dto.taskName,
-        strategyId: dto.strategyId,
-        goalId: strategy.goalId,
-        isSpecialized: dto.isSpecialized ?? false,
-        primaryDept: this.emptyToNull(dto.primaryDept ?? null),
-        relatedDepts: await this.normalizeTaskDepts(
-          dto.primaryDept,
-          dto.relatedDepts ?? [],
-        ),
-        displayOrder: dto.displayOrder ?? 0,
-      }),
+        hangulCode: dto.hangulCode ?? '',
+        seqNo: dto.seqNo,
+        name: dto.subtaskName,
+        purpose: dto.purpose,
+        method: dto.method,
+        year: dto.year,
+      },
+      userId,
     );
   }
 
-  async updateTask(taskCode: string, dto: UpdateTaskDto) {
-    const task = await this.taskRepo.findOne({ where: { taskCode } });
-    if (!task) throw new NotFoundException('실행과제를 찾을 수 없습니다.');
-    if (dto.strategyId !== undefined) {
-      const strategy = await this.strategyRepo.findOne({
-        where: { strategyId: dto.strategyId },
-      });
-      if (!strategy) {
-        throw new NotFoundException('전략과제를 찾을 수 없습니다.');
-      }
-      task.strategyId = strategy.strategyId;
-      task.goalId = strategy.goalId;
-      await this.kpiRepo.update(
-        { taskCode },
-        { strategyId: strategy.strategyId, goalId: strategy.goalId },
-      );
-    }
-    if (dto.taskName !== undefined) task.taskName = dto.taskName;
-    if (dto.isSpecialized !== undefined) task.isSpecialized = dto.isSpecialized;
-    if (dto.primaryDept !== undefined || dto.relatedDepts !== undefined) {
-      const primary =
-        dto.primaryDept !== undefined
-          ? this.emptyToNull(dto.primaryDept)
-          : task.primaryDept;
-      const related =
-        dto.relatedDepts !== undefined
-          ? dto.relatedDepts
-          : (task.relatedDepts ?? []);
-      task.primaryDept = primary;
-      task.relatedDepts = await this.normalizeTaskDepts(primary, related);
-    }
-    if (dto.displayOrder !== undefined) task.displayOrder = dto.displayOrder;
-    return this.taskRepo.save(task);
+  async updateSubtask(
+    subtaskCode: string,
+    dto: UpdateSubtaskDto,
+    userId: string,
+  ) {
+    return this.structure.updateNode(
+      {
+        kind: 'subtask',
+        lineageId: subtaskCode,
+        year: dto.year,
+        patch: {
+          subtaskName: dto.subtaskName,
+          hangulCode: dto.hangulCode,
+          purpose: dto.purpose,
+          method: dto.method,
+        },
+      },
+      userId,
+    );
   }
 
-  async deleteTask(taskCode: string) {
-    const kpiCount = await this.kpiRepo.count({ where: { taskCode } });
-    if (kpiCount > 0) {
-      throw new BadRequestException(
-        `연계 KPI ${kpiCount}개가 있어 삭제할 수 없습니다. 먼저 KPI를 옮기거나 지워 주세요.`,
-      );
-    }
-    await this.subtaskRepo.delete({ taskCode });
-    await this.evaluationRepo.delete({ taskCode });
-    await this.budgetRepo.delete({ taskCode });
-    await this.taskRepo.delete(taskCode);
-    return { ok: true as const };
+  async deleteSubtask(subtaskCode: string, year: number, userId: string) {
+    return this.structure.abolishNode(
+      { kind: 'subtask', lineageId: subtaskCode, year },
+      userId,
+    );
   }
 
   async replaceSubtasks(taskCode: string, dto: ReplaceSubtasksDto) {
@@ -688,65 +846,71 @@ export class StrategicPlanService implements OnModuleInit {
 
   /* ── 관리자: KPI ── */
 
-  async createKpi(dto: UpsertKpiDto) {
-    const exists = await this.kpiRepo.findOne({
-      where: { kpiCode: dto.kpiCode },
-    });
-    if (exists) {
-      throw new BadRequestException('같은 코드의 KPI가 이미 있습니다.');
+  async createKpi(dto: UpsertKpiDto, userId: string) {
+    if (!dto.taskCode) {
+      throw new BadRequestException('KPI는 실행과제에 묶여야 합니다.');
     }
-    const task = dto.taskCode
-      ? await this.taskRepo.findOne({ where: { taskCode: dto.taskCode } })
-      : null;
-    if (dto.taskCode && !task) {
-      throw new NotFoundException('실행과제를 찾을 수 없습니다.');
+    const parsed = parseKpiCode(dto.kpiCode);
+    const row = await this.structure.createKpi(
+      {
+        kpiCode: parsed.alphaCode,
+        taskCode: dto.taskCode,
+        name: dto.kpiName,
+        year: dto.year,
+        unit: dto.unit,
+        primaryDept: dto.primaryDept,
+      },
+      userId,
+    );
+    if (
+      dto.baseline !== undefined ||
+      dto.baselineRef !== undefined ||
+      dto.formula !== undefined
+    ) {
+      await this.structure.updateNode(
+        {
+          kind: 'kpi',
+          lineageId: row.kpiCode,
+          year: dto.year,
+          patch: {
+            baseline: dto.baseline,
+            baselineRef: dto.baselineRef,
+            formula: dto.formula,
+          },
+        },
+        userId,
+      );
     }
-    return this.kpiRepo.save(
-      this.kpiRepo.create({
-        kpiCode: dto.kpiCode,
-        kpiName: dto.kpiName,
-        unit: dto.unit ?? null,
-        taskCode: task?.taskCode ?? null,
-        strategyId: task?.strategyId ?? null,
-        goalId: task?.goalId ?? null,
-        baseline: dto.baseline ?? null,
-        baselineRef: dto.baselineRef ?? null,
-        formula: dto.formula ?? null,
-        source: dto.source ?? null,
-        displayOrder: dto.displayOrder ?? 0,
-      }),
+    return row;
+  }
+
+  async updateKpi(kpiCode: string, dto: UpdateKpiDto, userId: string) {
+    const patch: Record<string, unknown> = {};
+    if (dto.kpiName !== undefined) patch.kpiName = dto.kpiName;
+    if (dto.unit !== undefined) patch.unit = dto.unit;
+    if (dto.primaryDept !== undefined) patch.primaryDept = dto.primaryDept;
+    if (dto.baseline !== undefined) patch.baseline = dto.baseline;
+    if (dto.baselineRef !== undefined) patch.baselineRef = dto.baselineRef;
+    if (dto.formula !== undefined) patch.formula = dto.formula;
+    return this.structure.updateNode(
+      { kind: 'kpi', lineageId: kpiCode, year: dto.year, patch },
+      userId,
     );
   }
 
-  async updateKpi(kpiCode: string, dto: UpdateKpiDto) {
-    const kpi = await this.kpiRepo.findOne({ where: { kpiCode } });
-    if (!kpi) throw new NotFoundException('KPI를 찾을 수 없습니다.');
-    if (dto.taskCode !== undefined) {
-      const task = await this.taskRepo.findOne({
-        where: { taskCode: dto.taskCode },
-      });
-      if (!task) throw new NotFoundException('실행과제를 찾을 수 없습니다.');
-      kpi.taskCode = task.taskCode;
-      kpi.strategyId = task.strategyId;
-      kpi.goalId = task.goalId;
-    }
-    if (dto.kpiName !== undefined) kpi.kpiName = dto.kpiName;
-    if (dto.unit !== undefined) kpi.unit = this.emptyToNull(dto.unit);
-    if (dto.baseline !== undefined) kpi.baseline = dto.baseline ?? null;
-    if (dto.baselineRef !== undefined) {
-      kpi.baselineRef = this.emptyToNull(dto.baselineRef);
-    }
-    if (dto.formula !== undefined) kpi.formula = this.emptyToNull(dto.formula);
-    if (dto.source !== undefined) kpi.source = this.emptyToNull(dto.source);
-    if (dto.displayOrder !== undefined) kpi.displayOrder = dto.displayOrder;
-    return this.kpiRepo.save(kpi);
+  async deleteKpi(kpiCode: string, year: number, userId: string) {
+    return this.structure.abolishNode(
+      { kind: 'kpi', lineageId: kpiCode, year },
+      userId,
+    );
   }
 
-  async deleteKpi(kpiCode: string) {
-    await this.targetRepo.delete({ kpiCode });
-    await this.resultRepo.delete({ kpiCode });
-    await this.kpiRepo.delete(kpiCode);
-    return { ok: true as const };
+  listChanges() {
+    return this.structure.listChanges();
+  }
+
+  rollbackChange(logId: number, userId: string) {
+    return this.structure.rollback(logId, userId);
   }
 
   async setKpiTarget(kpiCode: string, year: number, value: number | null) {
@@ -795,56 +959,53 @@ export class StrategicPlanService implements OnModuleInit {
 
   /* ── 관리자: 재원 유형 ── */
 
-  async createFundSource(dto: CreateFundSourceDto) {
-    const name = dto.fundSourceName.trim();
-    if (!name) throw new BadRequestException('재원 이름을 입력해 주세요.');
-    const dup = await this.fundSourceRepo.findOne({
-      where: { fundSourceName: name },
-    });
-    if (dup) throw new BadRequestException('같은 이름의 재원이 이미 있습니다.');
-    const max = await this.fundSourceRepo
-      .createQueryBuilder('f')
-      .select('MAX(f.displayOrder)', 'max')
-      .getRawOne<{ max: number | null }>();
-    return this.fundSourceRepo.save(
-      this.fundSourceRepo.create({
-        fundSourceName: name,
-        displayOrder: dto.displayOrder ?? (max?.max ?? -1) + 1,
-        isActive: true,
-      }),
+  async createFundSource(dto: CreateFundSourceDto, userId: string) {
+    return this.structure.createFund(
+      {
+        name: dto.fundSourceName,
+        year: dto.year,
+        displayOrder: dto.displayOrder,
+      },
+      userId,
     );
   }
 
-  async updateFundSource(fundSourceId: number, dto: UpdateFundSourceDto) {
-    const fund = await this.fundSourceRepo.findOne({ where: { fundSourceId } });
-    if (!fund) throw new NotFoundException('재원 유형을 찾을 수 없습니다.');
-    if (dto.fundSourceName !== undefined) {
-      const name = dto.fundSourceName.trim();
-      if (!name) throw new BadRequestException('재원 이름을 입력해 주세요.');
-      const dup = await this.fundSourceRepo.findOne({
-        where: { fundSourceName: name },
+  async updateFundSource(
+    fundSourceId: number,
+    dto: UpdateFundSourceDto,
+    userId: string,
+  ) {
+    if (dto.displayOrder !== undefined || dto.isActive !== undefined) {
+      const fund = await this.fundSourceRepo.findOne({
+        where: { fundSourceId },
       });
-      if (dup && dup.fundSourceId !== fundSourceId) {
-        throw new BadRequestException('같은 이름의 재원이 이미 있습니다.');
-      }
-      fund.fundSourceName = name;
+      if (!fund) throw new NotFoundException('재원 유형을 찾을 수 없습니다.');
+      if (dto.displayOrder !== undefined) fund.displayOrder = dto.displayOrder;
+      if (dto.isActive !== undefined) fund.isActive = dto.isActive;
+      await this.fundSourceRepo.save(fund);
     }
-    if (dto.displayOrder !== undefined) fund.displayOrder = dto.displayOrder;
-    if (dto.isActive !== undefined) fund.isActive = dto.isActive;
-    return this.fundSourceRepo.save(fund);
+    if (dto.fundSourceName !== undefined) {
+      if (dto.year == null) {
+        throw new BadRequestException('재원 이름 변경 시 적용 학년도를 지정해 주세요.');
+      }
+      return this.structure.updateNode(
+        {
+          kind: 'fund',
+          lineageId: String(fundSourceId),
+          year: dto.year,
+          patch: { fundSourceName: dto.fundSourceName },
+        },
+        userId,
+      );
+    }
+    return this.fundSourceRepo.findOne({ where: { fundSourceId } });
   }
 
-  async deleteFundSource(fundSourceId: number) {
-    const fund = await this.fundSourceRepo.findOne({ where: { fundSourceId } });
-    if (!fund) throw new NotFoundException('재원 유형을 찾을 수 없습니다.');
-    const used = await this.budgetRepo.count({ where: { fundSourceId } });
-    if (used > 0) {
-      fund.isActive = false;
-      await this.fundSourceRepo.save(fund);
-      return { ok: true as const, deactivated: true, used };
-    }
-    await this.fundSourceRepo.delete(fundSourceId);
-    return { ok: true as const, deactivated: false, used: 0 };
+  async deleteFundSource(fundSourceId: number, year: number, userId: string) {
+    return this.structure.abolishNode(
+      { kind: 'fund', lineageId: String(fundSourceId), year },
+      userId,
+    );
   }
 
   /* ── 관리자: 부서 ── */

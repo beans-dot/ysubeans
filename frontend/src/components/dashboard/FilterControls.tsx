@@ -74,7 +74,7 @@ export function FilterControls() {
                 onClick={() => toggleYear(y)}
                 className={`rounded-md px-2 py-1 text-xs font-bold transition-colors ${
                   years.includes(y)
-                    ? 'bg-[#b5dc11] text-foreground'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-secondary text-secondary-foreground'
                 }`}
               >

@@ -1,11 +1,18 @@
 export interface SpSubtask {
   subtaskId: number;
   subtaskCode: string;
+  hangulCode?: string;
+  seqNo?: number;
+  displayCode?: string;
   subtaskName: string;
+  purpose?: string | null;
+  method?: string | null;
 }
 
 export interface SpTask {
   taskCode: string;
+  hangulCode?: string;
+  displayCode?: string;
   taskName: string;
   strategyId: string;
   goalId: string;
@@ -18,6 +25,7 @@ export interface SpTask {
 
 export interface SpStrategy {
   strategyId: string;
+  displayCode?: string;
   strategyName: string;
   goalId: string;
   tasks: SpTask[];
@@ -25,6 +33,7 @@ export interface SpStrategy {
 
 export interface SpGoal {
   goalId: string;
+  displayCode?: string;
   goalNo: number;
   goalName: string;
   strategies: SpStrategy[];
@@ -34,11 +43,13 @@ export type SpYearValues = Record<number, number | null>;
 
 export interface SpKpi {
   kpiCode: string;
+  displayCode?: string;
   kpiName: string;
   unit: string | null;
   taskCode: string | null;
   strategyId: string | null;
   goalId: string | null;
+  primaryDept?: string | null;
   baseline: number | null;
   baselineRef: string | null;
   formula: string | null;
@@ -69,6 +80,7 @@ export interface SpVision {
 
 export interface SpTree {
   years: number[];
+  asOfYear?: number | null;
   scales: {
     deptGrades: string[];
     irGrades: string[];
@@ -116,6 +128,24 @@ export interface SpFundSource {
   fundSourceName: string;
   displayOrder: number;
   isActive: boolean;
+  effectiveFrom?: number;
+  abolishedFrom?: number | null;
+}
+
+export interface SpChangeLog {
+  logId: number;
+  year: number;
+  kind: string;
+  kindLabel: string;
+  lineageId: string;
+  displayCode: string;
+  changeType: string;
+  changeTypeLabel: string;
+  summary: string;
+  beforePayload: Record<string, unknown> | null;
+  afterPayload: Record<string, unknown> | null;
+  changedBy: string | null;
+  createdAt: string;
 }
 
 export interface SpDepartment {

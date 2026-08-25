@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import html2canvas from 'html2canvas';
 import { Download } from 'lucide-react';
 import {
@@ -42,6 +43,7 @@ import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { logDataExport } from '@/lib/exportLog';
 import { renderMarker } from './ChartMarkers';
 
 type YearHoverState = {
@@ -273,6 +275,7 @@ export function HybridChart() {
   const pivot = useAnalysisStore((s) => s.pivot);
   const options = useAnalysisStore((s) => s.chartOptions);
   const chartRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
   const [scaleMode, setScaleMode] = useState<ChartScaleMode>('absolute');
   const [unitClashNotice, setUnitClashNotice] = useState<string | null>(null);
@@ -354,10 +357,21 @@ export function HybridChart() {
       backgroundColor: '#ffffff',
       scale: 2,
     });
+    const filename = `ysu-ir-chart-${Date.now()}.png`;
     const link = document.createElement('a');
-    link.download = `ysu-ir-chart-${Date.now()}.png`;
+    link.download = filename;
     link.href = canvas.toDataURL('image/png');
     link.click();
+    logDataExport({
+      format: 'png',
+      source: pathname.includes('competitiveness')
+        ? 'competitiveness-chart'
+        : 'dashboard-chart',
+      filename,
+      summary: chartBase
+        ? `차트 ${chartBase.series.length}개 시리즈`
+        : undefined,
+    });
   };
 
   if (!hasData || !chartBase) {

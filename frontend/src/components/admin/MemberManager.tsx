@@ -170,9 +170,9 @@ export function MemberManager() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold">회원관리</h2>
+          <h2 className="text-lg font-bold">전체 회원 관리</h2>
           <p className="text-sm text-muted-foreground">
-            회원가입 대기 여부를 확인하고 승인·거절하거나, 회원을 탈퇴(삭제)할 수
+            가입 순서대로 회원 목록을 보고, 승인·거절하거나 탈퇴(삭제)할 수
             있습니다.
           </p>
         </div>
@@ -382,7 +382,6 @@ export function MemberManager() {
                           <th className="px-2 py-1.5">시각</th>
                           <th className="px-2 py-1.5">결과</th>
                           <th className="px-2 py-1.5">IP</th>
-                          <th className="px-2 py-1.5">사유</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -395,9 +394,6 @@ export function MemberManager() {
                               {log.success ? '성공' : '실패'}
                             </td>
                             <td className="px-2 py-1.5">{log.ip || '-'}</td>
-                            <td className="px-2 py-1.5">
-                              {log.failReason || '-'}
-                            </td>
                           </tr>
                         ))}
                       </tbody>

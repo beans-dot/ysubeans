@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { fmt } from '@/lib/strategic-plan/format';
 import { goalAccent } from '@/lib/strategic-plan/goalAccent';
@@ -56,9 +57,9 @@ function TaskRow({
                     className="flex flex-wrap items-center gap-2 text-sm"
                   >
                     <span>{sub.subtaskName}</span>
-                    <span className="text-muted-foreground">
-                      {sub.subtaskCode}
-                    </span>
+                    <Badge variant="code">
+                      {sub.displayCode ?? sub.subtaskCode}
+                    </Badge>
                   </li>
                 ))}
               </ul>
@@ -78,9 +79,9 @@ function TaskRow({
                       key={code}
                       className="flex flex-wrap items-center gap-2 text-sm"
                     >
-                      <span className={accent.text}>
-                        {kpi.kpiCode}
-                      </span>
+                      <Badge variant="code">
+                        {kpi.displayCode ?? kpi.kpiCode}
+                      </Badge>
                       <span className="min-w-0 flex-1">{kpi.kpiName}</span>
                       <span className="text-muted-foreground">
                         {fmt(kpi.baseline)} → {fmt(kpi.targets[lastYear])}
@@ -135,14 +136,7 @@ export function StrategyView({
         return (
           <section key={goal.goalId}>
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded-md text-sm font-bold text-white',
-                  accent.dot,
-                )}
-              >
-                {goal.goalId}
-              </span>
+              <Badge variant="code">{goal.displayCode ?? goal.goalId}</Badge>
               <h2>
                 {goal.goalNo}. {goal.goalName}
               </h2>
@@ -160,9 +154,9 @@ export function StrategyView({
                 >
                   <CardContent className="p-4">
                     <h3 className="mb-1 flex flex-wrap items-center gap-2 text-sm font-bold">
-                      <span className={accent.text}>
-                        {strategy.strategyId}
-                      </span>
+                      <Badge variant="code">
+                        {strategy.displayCode ?? strategy.strategyId}
+                      </Badge>
                       {strategy.strategyName}
                     </h3>
                     <ul>

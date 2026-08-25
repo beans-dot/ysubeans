@@ -17,7 +17,7 @@ import type { SpDepartment } from '@/lib/strategic-plan/types';
 export function PlanDeptManager({
   reload,
 }: {
-  reload: () => Promise<void>;
+  reload?: () => Promise<void>;
 }) {
   const [items, setItems] = useState<SpDepartment[]>([]);
   const [newName, setNewName] = useState('');
@@ -52,7 +52,7 @@ export function PlanDeptManager({
     try {
       await updateSpDepartment(dept.deptId, { deptName: name.trim() });
       load();
-      await reload();
+      await reload?.();
     } catch (e) {
       alert(apiMessage(e, '부서명 수정 실패'));
       load();
@@ -80,14 +80,14 @@ export function PlanDeptManager({
 
   const handleDelete = async (dept: SpDepartment) => {
     const ok = window.confirm(
-      `부서 「${dept.deptName}」을(를) 삭제할까요?\n체계에서 이 부서가 책임·연관부서로 지정된 곳은 비워집니다.`,
+      `부서 「${dept.deptName}」을(를) 삭제할까요?\n전략체계에서 이 부서가 책임·연관부서로 지정된 곳은 비워집니다.`,
     );
     if (!ok) return;
     setBusy(true);
     try {
       await deleteSpDepartment(dept.deptId);
       load();
-      await reload();
+      await reload?.();
     } catch (e) {
       alert(apiMessage(e, '부서 삭제 실패'));
     } finally {
@@ -102,7 +102,7 @@ export function PlanDeptManager({
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          체계에서 실행과제의 책임부서·연관부서를 고를 때 쓰는 목록입니다.
+          전략체계에서 실행과제의 책임부서·연관부서를 고를 때 쓰는 목록입니다.
           이름을 바꾸면 이미 지정된 실행과제에도 바로 반영되고, 삭제하면 해당
           지정은 비워집니다.
         </p>

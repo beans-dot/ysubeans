@@ -29,6 +29,7 @@ import type {
   SpTask,
 } from '@/lib/strategic-plan/types';
 import { cn } from '@/lib/utils';
+import { logDataExport } from '@/lib/exportLog';
 import { useStrategicPlanStore } from '@/store/useStrategicPlanStore';
 import { BudgetAmountTable, TaskBudgetGrandTotal, sumAmounts, unitBudgetRows } from './BudgetAmountTable';
 import { TaskHeading } from './TaskHeading';
@@ -371,7 +372,7 @@ function ReportCard({
   const ir = draft?.irEval;
 
   return (
-    <Card className="border-2 border-foreground shadow-none">
+    <Card className="border-2 border-zinc-500 shadow-none">
       <CardContent className="p-4">
         <div className="mb-3">
           <TaskHeading task={task} />
@@ -383,19 +384,20 @@ function ReportCard({
               <div key={unit.code} className="space-y-2">
                 <div data-eval-budget="1" className="hidden space-y-1">
                   <p className="font-bold">
-                    {unit.code} 예·결산 내역 — {year}학년도
+                    {unit.displayCode ?? unit.code} 예·결산 내역 — {year}학년도
                   </p>
                   <BudgetAmountTable
                     taskCode={task.taskCode}
                     unitCode={unit.code}
                     unitName={unit.name}
+                    displayCode={unit.displayCode}
                     fundSources={fundSources}
                     year={year}
                     readOnly
                   />
                 </div>
                 <DualEvalBox
-                  itemTitle={`${hangulItem(index)}. ${unit.code} ${unit.name}`}
+                  itemTitle={`${hangulItem(index)}. ${unit.displayCode ?? unit.code} ${unit.name}`}
                   dept={
                     <ActivityReportTable
                       rows={draft?.taskActivities?.[unit.code] ?? []}
@@ -566,13 +568,20 @@ export function EvaluationReportView({
       const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const suffix =
         scope === 'all' ? '전체' : `선택${cards.length}건`;
+      const filename = `자체평가결과_${year}_${suffix}_${stamp}.pdf`;
       await exportEvalReportPdf({
         header: headerRef.current,
         cards,
-        filename: `자체평가결과_${year}_${suffix}_${stamp}.pdf`,
+        filename,
         title,
         includeBudget,
         onProgress: (done, total) => setProgress({ done, total }),
+      });
+      logDataExport({
+        format: 'pdf',
+        source: 'eval-report-pdf',
+        filename,
+        summary: `${title} · ${suffix}${includeBudget ? ' · 예결산 포함' : ''}`,
       });
       setDialogOpen(false);
     } catch {

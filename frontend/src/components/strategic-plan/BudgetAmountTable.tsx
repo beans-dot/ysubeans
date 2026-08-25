@@ -1,5 +1,6 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { fmt1, fmtWon, parseAmount } from '@/lib/strategic-plan/format';
 import type { SpBudgetDraft, SpFundSource } from '@/lib/strategic-plan/types';
@@ -167,6 +168,7 @@ export function BudgetAmountTable({
   taskCode,
   unitCode,
   unitName,
+  displayCode,
   fundSources,
   year,
   readOnly,
@@ -174,6 +176,7 @@ export function BudgetAmountTable({
   taskCode: string;
   unitCode: string;
   unitName?: string;
+  displayCode?: string;
   fundSources: SpFundSource[];
   year: number;
   readOnly?: boolean;
@@ -190,9 +193,9 @@ export function BudgetAmountTable({
   return (
     <div>
       {unitName ? (
-        <p className="mb-2 text-sm font-bold">
-          {unitCode}
-          <span className="ml-2 font-normal">{unitName}</span>
+        <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold">
+          <Badge variant="code">{displayCode ?? unitCode}</Badge>
+          <span className="font-normal">{unitName}</span>
         </p>
       ) : null}
       <table className="w-full text-sm">

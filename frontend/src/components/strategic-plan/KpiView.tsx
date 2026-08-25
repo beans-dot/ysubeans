@@ -10,6 +10,7 @@ import {
   useStrategicPlanStore,
   type SpKpiSortKey,
 } from '@/store/useStrategicPlanStore';
+import { Badge } from '@/components/ui/badge';
 import { EmptyState, SectionLabel } from './ui';
 
 function sortValue(kpi: SpKpi, key: SpKpiSortKey, year: number) {
@@ -41,7 +42,7 @@ function DetailRow({
           <div>
             <SectionLabel>소속 실행과제</SectionLabel>
             <p className="text-sm">
-              {task ? `${task.taskCode} · ${task.taskName}` : '–'}
+              {task ? `${task.displayCode ?? task.taskCode} · ${task.taskName}` : '–'}
             </p>
           </div>
           <div>
@@ -114,13 +115,8 @@ export function KpiView({
 
   const colSpan = 7;
 
-  const sortHeader = (key: SpKpiSortKey, label: string, numeric = false) => (
-    <th
-      className={cn(
-        'whitespace-nowrap px-3 py-2 font-bold',
-        numeric ? 'text-right' : 'text-left',
-      )}
-    >
+  const sortHeader = (key: SpKpiSortKey, label: string) => (
+    <th className="whitespace-nowrap px-3 py-2 text-left font-bold">
       <button
         type="button"
         onClick={() => toggleKpiSort(key)}
@@ -144,12 +140,12 @@ export function KpiView({
               지표명 · 실행과제 · 책임부서
             </th>
             <th className="px-3 py-2 text-left font-bold">단위</th>
-            {sortHeader('baseline', '기준값', true)}
-            {sortHeader('lastTarget', `${year} 목표`, true)}
-            <th className="whitespace-nowrap px-3 py-2 text-right font-bold">
+            {sortHeader('baseline', '기준값')}
+            {sortHeader('lastTarget', `${year} 목표`)}
+            <th className="whitespace-nowrap px-3 py-2 text-left font-bold">
               {year} 실적
             </th>
-            <th className="whitespace-nowrap px-3 py-2 text-right font-bold">
+            <th className="whitespace-nowrap px-3 py-2 text-left font-bold">
               달성률
             </th>
           </tr>
@@ -186,7 +182,9 @@ export function KpiView({
                         className={cn('h-2 w-2 rounded-full', accent.dot)}
                         aria-hidden
                       />
-                      <span>{kpi.kpiCode}</span>
+                      <Badge variant="code">
+                        {kpi.displayCode ?? kpi.kpiCode}
+                      </Badge>
                     </span>
                   </td>
                   <td className="px-3 py-2">

@@ -7,9 +7,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Repository } from 'typeorm';
+import {
+  IrExportLog,
+  type ExportFormat,
+} from '../../entities/ir-export-log.entity';
 import { IrLoginLog } from '../../entities/ir-login-log.entity';
-import { IrUser } from '../../entities/ir-user.entity';
+import { IrUser, type UserStatus } from '../../entities/ir-user.entity';
 import { MailService } from '../mail/mail.service';
+
+export type ActivityKind = 'all' | 'login' | 'export';
 
 @Injectable()
 export class UsersService {
@@ -18,6 +24,8 @@ export class UsersService {
     private readonly usersRepo: Repository<IrUser>,
     @InjectRepository(IrLoginLog)
     private readonly loginLogRepo: Repository<IrLoginLog>,
+    @InjectRepository(IrExportLog)
+    private readonly exportLogRepo: Repository<IrExportLog>,
     private readonly mailService: MailService,
   ) {}
 
@@ -37,20 +45,10 @@ export class UsersService {
     };
   }
 
-  async list() {
+  async list(status?: UserStatus) {
     const users = await this.usersRepo.find({
-      order: {
-        status: 'ASC',
-        createdAt: 'DESC',
-      },
-    });
-    // pending first for admin UX
-    const rank = (s: string) =>
-      s === 'pending' ? 0 : s === 'approved' ? 1 : 2;
-    users.sort((a, b) => {
-      const d = rank(a.status) - rank(b.status);
-      if (d !== 0) return d;
-      return b.createdAt.getTime() - a.createdAt.getTime();
+      where: status ? { status } : {},
+      order: { createdAt: 'DESC' },
     });
     return users.map((u) => this.toPublic(u));
   }
@@ -73,10 +71,97 @@ export class UsersService {
         success: l.success,
         ip: l.ip,
         userAgent: l.userAgent,
-        failReason: l.failReason,
         createdAt: l.createdAt,
       })),
     };
+  }
+
+  async activity(kind: ActivityKind = 'all', limit = 400) {
+    const take = Math.min(Math.max(limit, 1), 500);
+    const users = await this.usersRepo.find({ select: ['id', 'name'] });
+    const nameById = new Map(users.map((u) => [u.id, u.name]));
+
+    const loginRows =
+      kind === 'export'
+        ? []
+        : await this.loginLogRepo.find({
+            order: { createdAt: 'DESC' },
+            take,
+          });
+    const exportRows =
+      kind === 'login'
+        ? []
+        : await this.exportLogRepo.find({
+            order: { createdAt: 'DESC' },
+            take,
+          });
+
+    const loginItems = loginRows.map((l) => ({
+      id: `login-${l.logId}`,
+      kind: 'login' as const,
+      createdAt: l.createdAt,
+      userId: l.userId,
+      userName: nameById.get(l.userId) ?? null,
+      ip: l.ip,
+      success: l.success,
+      format: null as ExportFormat | null,
+      filename: null as string | null,
+      summary: l.success ? '로그인 성공' : '로그인 실패',
+      source: null as string | null,
+    }));
+
+    const exportItems = exportRows.map((e) => ({
+      id: `export-${e.exportId}`,
+      kind: 'export' as const,
+      createdAt: e.createdAt,
+      userId: e.userId,
+      userName: e.userName || nameById.get(e.userId) || null,
+      ip: e.ip,
+      success: true,
+      format: e.format,
+      filename: e.filename,
+      summary: e.summary,
+      source: e.source,
+    }));
+
+    return [...loginItems, ...exportItems]
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      .slice(0, take);
+  }
+
+  async recordExport(input: {
+    userId: string;
+    userName: string;
+    format: ExportFormat;
+    source: string;
+    filename: string;
+    summary?: string | null;
+    ip?: string | null;
+  }) {
+    const format = input.format;
+    if (format !== 'xlsx' && format !== 'png' && format !== 'pdf') {
+      throw new BadRequestException('지원하지 않는 내보내기 형식입니다.');
+    }
+    const source = input.source.trim();
+    const filename = input.filename.trim();
+    if (!source || !filename) {
+      throw new BadRequestException('내보낸 항목 정보가 부족합니다.');
+    }
+    const row = await this.exportLogRepo.save(
+      this.exportLogRepo.create({
+        userId: input.userId,
+        userName: input.userName,
+        format,
+        source: source.slice(0, 100),
+        filename: filename.slice(0, 300),
+        summary: input.summary?.trim() || null,
+        ip: input.ip ?? null,
+      }),
+    );
+    return { ok: true, exportId: row.exportId };
   }
 
   async approve(id: string, adminId: string) {

@@ -1420,26 +1420,47 @@ export class AlimiService {
     return upserted;
   }
 
-  async runCurrentYearBatch(): Promise<{ year: number; upserted: number }> {
-    const year = this.currentYear;
-    const univs = await this.syncUniversities(year);
-    await this.sleep(1500);
-    await this.syncDepartments(year).catch(() => 0);
-    await this.sleep(1500);
-
-    const limit = this.parseUnivLimit(process.env.ALIMI_STATS_UNIV_LIMIT);
-    const ysu = process.env.YSU_UNIV_CODE || '';
-    const codes = this.selectUnivCodes(univs, ysu, limit);
-    const upserted = await this.ingestStats(year, codes);
-
-    // 배치 종료 시 한 번 더 보장 (학과동기화·통계 모두 반영)
-    await syncDeptLevelMetricNames(this.dataSource);
-
-    await this.dataSource.getRepository(IrUpdateLog).save({
-      updateType: 'ALIMI_BATCH',
-      logText: `대학알리미 정기 배치 완료 (${year}년, 지표 ${upserted}건 반영)`,
+  async listBatches(limit = 50) {
+    const take = Math.min(Math.max(limit, 1), 200);
+    return this.dataSource.getRepository(IrUpdateLog).find({
+      where: { updateType: 'ALIMI_BATCH' },
+      order: { updateDate: 'DESC', logId: 'DESC' },
+      take,
     });
-    return { year, upserted };
+  }
+
+  async runCurrentYearBatch(
+    startedBy?: string,
+  ): Promise<{ year: number; upserted: number }> {
+    const year = this.currentYear;
+    const who = startedBy ? ` · 실행 ${startedBy}` : '';
+    try {
+      const univs = await this.syncUniversities(year);
+      await this.sleep(1500);
+      await this.syncDepartments(year).catch(() => 0);
+      await this.sleep(1500);
+
+      const limit = this.parseUnivLimit(process.env.ALIMI_STATS_UNIV_LIMIT);
+      const ysu = process.env.YSU_UNIV_CODE || '';
+      const codes = this.selectUnivCodes(univs, ysu, limit);
+      const upserted = await this.ingestStats(year, codes);
+
+      // 배치 종료 시 한 번 더 보장 (학과동기화·통계 모두 반영)
+      await syncDeptLevelMetricNames(this.dataSource);
+
+      await this.dataSource.getRepository(IrUpdateLog).save({
+        updateType: 'ALIMI_BATCH',
+        logText: `대학알리미 정기 배치 완료 (${year}년, 지표 ${upserted}건 반영)${who}`,
+      });
+      return { year, upserted };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.dataSource.getRepository(IrUpdateLog).save({
+        updateType: 'ALIMI_BATCH',
+        logText: `대학알리미 정기 배치 실패 (${year}년)${who}: ${message}`,
+      });
+      throw err;
+    }
   }
 
   /** 미설정·0 이하면 무제한(전체 대학). */

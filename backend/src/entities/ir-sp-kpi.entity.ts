@@ -1,7 +1,7 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 import { numericTransformer } from './numeric.transformer';
 
-/** 성과지표(KPI) */
+/** 성과지표(KPI). kpi_code는 안정·표시 코드(A11a). */
 @Entity('ir_sp_kpi')
 export class IrSpKpi {
   @PrimaryColumn({ name: 'kpi_code', type: 'varchar', length: 30 })
@@ -25,6 +25,9 @@ export class IrSpKpi {
   @Column({ name: 'goal_id', type: 'varchar', length: 10, nullable: true })
   goalId: string | null;
 
+  @Column({ name: 'primary_dept', type: 'varchar', length: 100, nullable: true })
+  primaryDept: string | null;
+
   @Column({
     name: 'baseline',
     type: 'numeric',
@@ -44,4 +47,10 @@ export class IrSpKpi {
 
   @Column({ name: 'display_order', type: 'int', default: 0 })
   displayOrder: number;
+
+  @Column({ name: 'effective_from', type: 'int', default: 2022 })
+  effectiveFrom: number;
+
+  @Column({ name: 'abolished_from', type: 'int', nullable: true })
+  abolishedFrom: number | null;
 }

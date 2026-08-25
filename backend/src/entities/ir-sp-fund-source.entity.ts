@@ -16,4 +16,10 @@ export class IrSpFundSource {
   /** 사용 중이라 삭제할 수 없는 재원은 비활성으로 감춘다. */
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
+
+  @Column({ name: 'effective_from', type: 'int', default: 2022 })
+  effectiveFrom: number;
+
+  @Column({ name: 'abolished_from', type: 'int', nullable: true })
+  abolishedFrom: number | null;
 }
