@@ -1,6 +1,6 @@
 import { aggregateDeptMaps } from './aggregate';
 import type { KpiViewModel } from './fetchMonitoringData';
-import type { OrgStructure } from './types';
+import type { OrgStructure, StudentCountComponentKey } from './types';
 
 export type CompareKind = 'series' | 'dept';
 export type CompareSortKey = 'value' | 'name' | 'order';
@@ -13,6 +13,50 @@ export interface CompareBarRow {
   value: number | null;
   seriesOrder: number;
   deptOrder: number;
+  /** 재학생 수 구성 항목별 값. 2개 이상이면 누적 차트에 사용 */
+  parts?: Partial<Record<StudentCountComponentKey, number | null>>;
+}
+
+function partValue(
+  view: KpiViewModel,
+  key: StudentCountComponentKey,
+  deptCode: string,
+  year: number,
+): number | null {
+  return view.studentBreakdown?.depts[key]?.[deptCode]?.[year] ?? null;
+}
+
+function seriesPartValue(
+  view: KpiViewModel,
+  key: StudentCountComponentKey,
+  deptCodes: string[],
+  year: number,
+  method: KpiViewModel['kpi']['seriesAggregation'],
+): number | null {
+  const maps = deptCodes.map(
+    (code) => view.studentBreakdown?.depts[key]?.[code] ?? {},
+  );
+  return aggregateDeptMaps(maps, [year], method)[year] ?? null;
+}
+
+function rowParts(
+  view: KpiViewModel,
+  year: number,
+  deptCodes: string[],
+  kind: CompareKind,
+  deptCode?: string,
+): CompareBarRow['parts'] | undefined {
+  const keys = view.studentBreakdown?.keys;
+  if (!keys?.length) return undefined;
+  const method = view.kpi.seriesAggregation;
+  const parts: NonNullable<CompareBarRow['parts']> = {};
+  for (const key of keys) {
+    parts[key] =
+      kind === 'series'
+        ? seriesPartValue(view, key, deptCodes, year, method)
+        : partValue(view, key, deptCode ?? '', year);
+  }
+  return parts;
 }
 
 export function buildCompareRows(
@@ -27,6 +71,7 @@ export function buildCompareRows(
   const rows: CompareBarRow[] = [];
 
   for (const series of org.series) {
+    const deptCodes = series.departments.map((d) => d.deptCode);
     if (opts.showSeries) {
       const deptMaps = series.departments.map(
         (d) => view.depts[d.deptCode] ?? {},
@@ -39,6 +84,7 @@ export function buildCompareRows(
         value: aggregated[year] ?? null,
         seriesOrder: series.displayOrder,
         deptOrder: -1,
+        parts: rowParts(view, year, deptCodes, 'series'),
       });
     }
     if (opts.showDepts) {
@@ -50,6 +96,7 @@ export function buildCompareRows(
           value: view.depts[dept.deptCode]?.[year] ?? null,
           seriesOrder: series.displayOrder,
           deptOrder: dept.displayOrder,
+          parts: rowParts(view, year, deptCodes, 'dept', dept.deptCode),
         });
       }
     }

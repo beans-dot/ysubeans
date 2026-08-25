@@ -28,8 +28,12 @@ export function MetricDetailViewer({
           {view.accounting
             ? `대학 예산은 수입과 지출을 따로 봅니다. 그래프는 ${view.selectedYear - 2}~${view.selectedYear}년 수입·지출 추이입니다.`
             : `${view.selectedYear}년 기준 직전 2년을 포함한 3개년 추이입니다.`}
+          {view.studentBreakdown
+            ? ' 재학생 수는 위에서 켠 구성 항목의 합(총계)으로 그립니다.'
+            : null}
         </p>
         <MonitoringTrendChart
+          key={`trend-${view.id}-${view.studentBreakdown?.keys.join('-') ?? 'plain'}`}
           years={view.years}
           values={view.accounting ? view.accounting.income : view.univ}
           unit={view.unit}
@@ -71,6 +75,11 @@ export function MetricDetailViewer({
           막대로 표시됩니다. 같은 위계에서 상위 10%는 밝은 파랑, 하위 10%는 밝은
           빨강입니다. 달성값순, 이름순, 학과나열순(편제 순서)과 오름/내림차순을
           바꿀 수 있습니다.
+          {view.studentBreakdown && view.studentBreakdown.keys.length >= 2
+            ? ' 재학생 구성 항목을 2개 이상 켜면 총계 기준 누적 가로 막대로 구분하고, 항목별 인원과 비중은 막대에 마우스를 올리면 볼 수 있습니다.'
+            : view.studentBreakdown
+              ? ' 비교 막대도 켠 구성 항목의 합(총계)입니다.'
+              : null}
         </p>
         {view.accounting ? (
           <div className="space-y-6">
@@ -104,7 +113,11 @@ export function MetricDetailViewer({
             </div>
           </div>
         ) : (
-          <HierarchyCompareChart key={view.id} view={view} org={org} />
+          <HierarchyCompareChart
+            key={`${view.id}-${view.studentBreakdown?.keys.join('-') ?? 'plain'}`}
+            view={view}
+            org={org}
+          />
         )}
       </section>
     </div>

@@ -55,13 +55,16 @@ function MenuHub() {
       />
 
       <div className="relative z-10 flex w-full max-w-6xl flex-col items-center px-4 sm:px-8">
-        <h1 className="text-center text-4xl tracking-wide text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.65)] sm:text-5xl md:text-[3.25rem]">
+        <h1 className="text-center text-4xl tracking-wide text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.4)] [-webkit-text-stroke:2px_#3f3f46] [paint-order:stroke_fill] sm:text-5xl sm:[-webkit-text-stroke:2.5px_#3f3f46] md:text-[3.25rem] md:[-webkit-text-stroke:3px_#3f3f46]">
           YSU IR Library
         </h1>
+        <p className="mt-3 text-center text-[16px] tracking-wide text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.4)]">
+          Yeonsung Institutional Research Library
+        </p>
 
         <nav
           aria-label="바로가기"
-          className="mt-14 grid w-full grid-cols-2 gap-px overflow-hidden rounded-sm border border-white/30 bg-white/30 lg:grid-cols-4"
+          className="mt-28 grid w-full grid-cols-2 gap-px overflow-hidden rounded-sm border border-white/30 bg-white/30 lg:grid-cols-4"
         >
           {HUB_ITEMS.map((item) => {
             const Icon = item.icon;

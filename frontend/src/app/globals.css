@@ -62,8 +62,12 @@
   .sp-root :not(svg):not(path):not(circle):not(line):not(polyline):not(rect):not(ellipse) {
     font-family: 'S-Core Dream', sans-serif !important;
   }
-  .sp-root :not(.sp-vision-doc):not(.sp-vision-doc *) {
+  .sp-root :not(.sp-vision-doc):not(.sp-vision-doc *):not(.sp-eval-section-title) {
     font-size: 14px !important;
+  }
+  .sp-root .sp-eval-section-title {
+    font-size: 15.4px !important;
+    font-weight: 700;
   }
   .sp-vision-doc {
     font-size: 14px;

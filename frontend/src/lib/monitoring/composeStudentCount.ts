@@ -9,7 +9,7 @@ export function emptyYearMap(years: number[]): YearValueMap {
   return Object.fromEntries(years.map((y) => [y, null]));
 }
 
-function selectedComponentKeys(
+export function selectedComponentKeys(
   toggles: StudentCountToggles,
 ): StudentCountComponentKey[] {
   const keys: StudentCountComponentKey[] = [];
@@ -63,5 +63,26 @@ export function composeStudentCountHierarchy(
       years,
     );
   }
-  return { univ, depts };
+  return {
+    univ: fillMissingUnivFromDepts(univ, depts, years),
+    depts,
+  };
+}
+
+/** 대학 단위가 없으면 학과 합으로 총계를 맞춤 (추이·카드와 비교가 같은 도출값) */
+function fillMissingUnivFromDepts(
+  univ: YearValueMap,
+  depts: Record<string, YearValueMap>,
+  years: number[],
+): YearValueMap {
+  const out = { ...univ };
+  const maps = Object.values(depts);
+  for (const year of years) {
+    if (out[year] != null) continue;
+    const nums = maps
+      .map((m) => m[year])
+      .filter((v): v is number => v != null);
+    out[year] = nums.length === 0 ? null : nums.reduce((a, b) => a + b, 0);
+  }
+  return out;
 }

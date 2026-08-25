@@ -25,9 +25,14 @@ import {
   assignHighlightBands,
   COMPARE_BAR_COLORS,
   highlightBarFill,
+  stackShade,
 } from '@/lib/monitoring/percentiles';
 import type { KpiViewModel } from '@/lib/monitoring/fetchMonitoringData';
-import type { HighlightBand, OrgStructure } from '@/lib/monitoring/types';
+import type {
+  HighlightBand,
+  OrgStructure,
+  StudentCountComponentKey,
+} from '@/lib/monitoring/types';
 import { cn } from '@/lib/utils';
 
 const SORT_KEYS: Array<{ key: CompareSortKey; label: string }> = [
@@ -64,6 +69,50 @@ function AxisNameTick({
   );
 }
 
+function formatPct(part: number | null, total: number | null): string {
+  if (part == null || total == null || total <= 0) return '0%';
+  return `${Math.round((part / total) * 100)}%`;
+}
+
+function StudentStackTooltip({
+  active,
+  payload,
+  metricLabel,
+  unit,
+  labels,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    dataKey?: string | number;
+    value?: number | null;
+    payload?: { name?: string; barValue?: number | null };
+  }>;
+  metricLabel: string;
+  unit: string | null;
+  labels: Partial<Record<StudentCountComponentKey, string>>;
+}) {
+  if (!active || !payload?.length) return null;
+  const item = payload[0];
+  const row = item.payload;
+  const key = String(item.dataKey ?? '') as StudentCountComponentKey;
+  const part = typeof item.value === 'number' ? item.value : null;
+  const total = row?.barValue ?? null;
+  const varLabel = labels[key] ?? key;
+  return (
+    <div className="rounded-md border bg-background px-3 py-2 text-xs shadow-md">
+      {row?.name ? (
+        <div className="mb-1 font-bold text-foreground">{row.name}</div>
+      ) : null}
+      <div>
+        {metricLabel}({formatValueWithUnit(total, unit)})
+      </div>
+      <div>
+        {varLabel}({formatValueWithUnit(part, unit)}, {formatPct(part, total)})
+      </div>
+    </div>
+  );
+}
+
 export function HierarchyCompareChart({
   view,
   org,
@@ -75,6 +124,11 @@ export function HierarchyCompareChart({
   const [showDepts, setShowDepts] = useState(true);
   const [sortKey, setSortKey] = useState<CompareSortKey>('order');
   const [sortDir, setSortDir] = useState<CompareSortDir>('asc');
+
+  const stackKeys = view.studentBreakdown?.keys ?? [];
+  const stackLabels: Partial<Record<StudentCountComponentKey, string>> =
+    view.studentBreakdown?.labels ?? {};
+  const stacked = stackKeys.length >= 2;
 
   const rows = useMemo(() => {
     const built = buildCompareRows(view, org, { showSeries, showDepts });
@@ -93,13 +147,22 @@ export function HierarchyCompareChart({
       Object.entries(kindBands).forEach(([id, band]) => bands.set(id, band));
     });
 
-    return rows.map((row) => ({
-      ...row,
-      band: bands.get(row.id) ?? 'none',
-      barValue: row.value,
-      axisLabel: row.name,
-    }));
-  }, [rows, view.kpi.direction]);
+    return rows.map((row) => {
+      const parts: Record<string, number> = {};
+      if (stacked) {
+        for (const key of stackKeys) {
+          parts[key] = row.parts?.[key] ?? 0;
+        }
+      }
+      return {
+        ...row,
+        band: bands.get(row.id) ?? 'none',
+        barValue: row.value,
+        axisLabel: row.name,
+        ...parts,
+      };
+    });
+  }, [rows, view.kpi.direction, stacked, stackKeys]);
 
   const height = Math.max(280, chartData.length * ROW_HEIGHT);
 
@@ -161,6 +224,26 @@ export function HierarchyCompareChart({
               />
               하위 10%
             </span>
+            {stacked
+              ? stackKeys.map((key, i) => (
+                  <span
+                    key={key}
+                    className="inline-flex shrink-0 items-center gap-1"
+                  >
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-sm"
+                      style={{
+                        backgroundColor: stackShade(
+                          COMPARE_BAR_COLORS.dept,
+                          i,
+                          stackKeys.length,
+                        ),
+                      }}
+                    />
+                    {stackLabels[key]}
+                  </span>
+                ))
+              : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -198,6 +281,7 @@ export function HierarchyCompareChart({
         <div style={{ height }} className="w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
+              key={stacked ? `stack-${stackKeys.join('-')}` : 'single'}
               layout="vertical"
               data={chartData}
               margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
@@ -217,23 +301,69 @@ export function HierarchyCompareChart({
                 tick={AxisNameTick}
                 interval={0}
               />
-              <Tooltip
-                formatter={(value) => [
-                  typeof value === 'number'
-                    ? formatValueWithUnit(value, view.unit)
-                    : 'N/A',
-                  view.label,
-                ]}
-              />
-              <Bar dataKey="barValue" maxBarSize={18} radius={[0, 4, 4, 0]}>
-                {chartData.map((row) => (
-                  <Cell
-                    key={row.id}
-                    fill={highlightBarFill(row.band, row.kind)}
-                    className={cn(row.value == null && 'opacity-30')}
-                  />
-                ))}
-              </Bar>
+              {stacked ? (
+                <Tooltip
+                  shared={false}
+                  cursor={{ fill: 'transparent' }}
+                  content={
+                    <StudentStackTooltip
+                      metricLabel={view.label}
+                      unit={view.unit}
+                      labels={stackLabels}
+                    />
+                  }
+                />
+              ) : (
+                <Tooltip
+                  formatter={(value) => [
+                    typeof value === 'number'
+                      ? formatValueWithUnit(value, view.unit)
+                      : 'N/A',
+                    view.label,
+                  ]}
+                />
+              )}
+              {stacked
+                ? stackKeys.map((key, i) => (
+                    <Bar
+                      key={key}
+                      dataKey={key}
+                      name={stackLabels[key]}
+                      stackId="student"
+                      maxBarSize={18}
+                      isAnimationActive={false}
+                      strokeWidth={0}
+                      radius={
+                        i === stackKeys.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]
+                      }
+                    >
+                      {chartData.map((row) => {
+                        const fill = stackShade(
+                          highlightBarFill(row.band, row.kind),
+                          i,
+                          stackKeys.length,
+                        );
+                        return (
+                          <Cell
+                            key={`${row.id}-${key}`}
+                            fill={fill}
+                            className={cn(row.value == null && 'opacity-30')}
+                          />
+                        );
+                      })}
+                    </Bar>
+                  ))
+                : (
+                    <Bar dataKey="barValue" maxBarSize={18} radius={[0, 4, 4, 0]}>
+                      {chartData.map((row) => (
+                        <Cell
+                          key={row.id}
+                          fill={highlightBarFill(row.band, row.kind)}
+                          className={cn(row.value == null && 'opacity-30')}
+                        />
+                      ))}
+                    </Bar>
+                  )}
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { FileDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,7 +23,6 @@ import type {
   SpEvalActivity,
   SpEvaluationDraft,
   SpFundSource,
-  SpIrEvalOverlay,
   SpKpi,
   SpSurveyItem,
   SpSurveyPlan,
@@ -33,21 +32,77 @@ import { cn } from '@/lib/utils';
 import { useStrategicPlanStore } from '@/store/useStrategicPlanStore';
 import { BudgetAmountTable, TaskBudgetGrandTotal, sumAmounts, unitBudgetRows } from './BudgetAmountTable';
 import { TaskHeading } from './TaskHeading';
-import { EmptyState, SectionLabel } from './ui';
+import { EmptyState } from './ui';
 
-function Field({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | null | undefined;
-}) {
+const HANGUL_ITEMS = [
+  '가',
+  '나',
+  '다',
+  '라',
+  '마',
+  '바',
+  '사',
+  '아',
+  '자',
+  '차',
+  '카',
+  '타',
+  '파',
+  '하',
+] as const;
+
+function hangulItem(index: number) {
+  return HANGUL_ITEMS[index] ?? String(index + 1);
+}
+
+function EvalText({ value }: { value: string | null | undefined }) {
   const text = (value ?? '').trim();
+  return <p className="whitespace-pre-wrap">{text || '–'}</p>;
+}
+
+function DualEvalBox({
+  itemTitle,
+  dept,
+  ir,
+  irGrade,
+}: {
+  itemTitle?: string;
+  dept: ReactNode;
+  ir?: string | null;
+  irGrade?: string | null;
+}) {
+  const grade = (irGrade ?? '').trim();
   return (
-    <div className="grid gap-1">
-      <SectionLabel>{label}</SectionLabel>
-      <p className="whitespace-pre-wrap text-sm">{text || '–'}</p>
+    <div className="space-y-2 rounded-md border p-3">
+      {itemTitle ? <p className="font-bold">{itemTitle}</p> : null}
+      <div className="space-y-1">
+        <p className="font-bold">[부서 자체평가]</p>
+        {dept}
+      </div>
+      <div data-eval-ir="1" className="space-y-1">
+        <p className="font-bold">[IR 평가]{grade ? ` · ${grade}` : ''}</p>
+        <EvalText value={ir} />
+      </div>
     </div>
+  );
+}
+
+function NumberedSection({
+  n,
+  title,
+  children,
+}: {
+  n: number;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3 py-4 first:pt-0 last:pb-0">
+      <h3 className="sp-eval-section-title mb-1">
+        {n}. {title}
+      </h3>
+      {children}
+    </section>
   );
 }
 
@@ -293,65 +348,6 @@ function SurveyPlansTable({ plans }: { plans: SpSurveyPlan[] }) {
   );
 }
 
-function IrField({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | null | undefined;
-}) {
-  return (
-    <div
-      data-eval-ir="1"
-      className="rounded-md border border-sky-300 bg-sky-50 p-3"
-    >
-      <p className="mb-1 text-xs font-bold text-sky-800">[IR 평가]</p>
-      <Field label={label} value={value} />
-    </div>
-  );
-}
-
-function IrSection({
-  ir,
-  units,
-}: {
-  ir: SpIrEvalOverlay | undefined;
-  units: Array<{ code: string; name: string }>;
-}) {
-  return (
-    <div
-      data-eval-ir="1"
-      className="space-y-3 rounded-md border border-sky-300 bg-sky-50 p-3"
-    >
-      <SectionLabel>[IR 평가]</SectionLabel>
-      {units.map((unit) => (
-        <Field
-          key={unit.code}
-          label={`${unit.code} TASK 의견`}
-          value={ir?.taskComments?.[unit.code]}
-        />
-      ))}
-      <Field label="성과지표 의견" value={ir?.kpiComment} />
-      <Field label="주요 성과(우수사례)" value={ir?.achievements} />
-      <Field label="부서 자체분석 및 개선방향" value={ir?.analysis} />
-      <Field
-        label={`예결산의 적절성${ir?.budgetAdequacyGrade ? ` · ${ir.budgetAdequacyGrade}` : ''}`}
-        value={ir?.budgetAdequacy}
-      />
-      <Field
-        label={`절차상 적절성${ir?.processAdequacyGrade ? ` · ${ir.processAdequacyGrade}` : ''}`}
-        value={ir?.processAdequacy}
-      />
-      <Field
-        label={`성과지표 적절성${ir?.kpiAdequacyGrade ? ` · ${ir.kpiAdequacyGrade}` : ''}`}
-        value={ir?.kpiAdequacy}
-      />
-      <Field label="만족도 세부항목 의견" value={ir?.surveyItemsComment} />
-      <Field label="환류계획 의견" value={ir?.surveyPlansComment} />
-    </div>
-  );
-}
-
 function ReportCard({
   task,
   draft,
@@ -372,118 +368,110 @@ function ReportCard({
   const settlementTotal = sumAmounts(
     allRows.map((r) => parseAmount(r.settlement)),
   );
+  const ir = draft?.irEval;
+
   return (
-    <Card>
-      <CardContent className="space-y-5 p-4">
-        <TaskHeading task={task} />
+    <Card className="border-2 border-foreground shadow-none">
+      <CardContent className="p-4">
+        <div className="mb-3">
+          <TaskHeading task={task} />
+        </div>
 
-        <SectionLabel>[부서 자체평가]</SectionLabel>
-
-        {units.map((unit) => (
-          <div key={unit.code} className="space-y-3">
-            <div data-eval-budget="1" className="hidden space-y-2">
-              <SectionLabel>
-                {unit.code} 예·결산 내역 — {year}학년도
-              </SectionLabel>
-              <BudgetAmountTable
+        <div className="divide-y divide-foreground/40">
+          <NumberedSection n={1} title="TASK별 사업/프로그램 자체평가">
+            {units.map((unit, index) => (
+              <div key={unit.code} className="space-y-2">
+                <div data-eval-budget="1" className="hidden space-y-1">
+                  <p className="font-bold">
+                    {unit.code} 예·결산 내역 — {year}학년도
+                  </p>
+                  <BudgetAmountTable
+                    taskCode={task.taskCode}
+                    unitCode={unit.code}
+                    unitName={unit.name}
+                    fundSources={fundSources}
+                    year={year}
+                    readOnly
+                  />
+                </div>
+                <DualEvalBox
+                  itemTitle={`${hangulItem(index)}. ${unit.code} ${unit.name}`}
+                  dept={
+                    <ActivityReportTable
+                      rows={draft?.taskActivities?.[unit.code] ?? []}
+                      fundSources={fundSources}
+                    />
+                  }
+                  ir={ir?.taskComments?.[unit.code]}
+                />
+              </div>
+            ))}
+            <div data-eval-budget="1" className="hidden">
+              <TaskBudgetGrandTotal
                 taskCode={task.taskCode}
-                unitCode={unit.code}
-                unitName={unit.name}
+                units={units}
                 fundSources={fundSources}
                 year={year}
-                readOnly
+                budgetTotal={budgetTotal}
+                settlementTotal={settlementTotal}
               />
             </div>
-            <SectionLabel>
-              ① TASK별 사업/프로그램 자체평가 — {unit.code} {unit.name}
-            </SectionLabel>
-            <ActivityReportTable
-              rows={draft?.taskActivities?.[unit.code] ?? []}
-              fundSources={fundSources}
+          </NumberedSection>
+
+          <NumberedSection n={2} title={`성과지표 달성값 — ${year}학년도`}>
+            <DualEvalBox
+              dept={<KpiTable task={task} year={year} poEvals={draft?.kpiPoEvals} />}
+              ir={ir?.kpiComment}
             />
-            <IrField
-              label={`${unit.code} TASK 의견`}
-              value={draft?.irEval?.taskComments?.[unit.code]}
+          </NumberedSection>
+
+          <NumberedSection n={3} title="주요 성과 및 우수사례">
+            <DualEvalBox
+              itemTitle="주요 성과(우수사례)"
+              dept={<EvalText value={draft?.deptSummary} />}
+              ir={ir?.achievements}
             />
-          </div>
-        ))}
+            <DualEvalBox
+              itemTitle="부서 자체분석 및 개선방향"
+              dept={<EvalText value={draft?.deptAnalysis} />}
+              ir={ir?.analysis}
+            />
+          </NumberedSection>
 
-        <div data-eval-budget="1" className="hidden">
-          <TaskBudgetGrandTotal
-            taskCode={task.taskCode}
-            units={units}
-            fundSources={fundSources}
-            year={year}
-            budgetTotal={budgetTotal}
-            settlementTotal={settlementTotal}
-          />
+          <NumberedSection n={4} title="자체점검 및 진단">
+            <DualEvalBox
+              itemTitle={`예결산의 적절성${draft?.budgetAdequacyGrade ? ` · ${draft.budgetAdequacyGrade}` : ''}`}
+              dept={<EvalText value={draft?.budgetAdequacy} />}
+              ir={ir?.budgetAdequacy}
+              irGrade={ir?.budgetAdequacyGrade}
+            />
+            <DualEvalBox
+              itemTitle={`절차상 적절성${draft?.processAdequacyGrade ? ` · ${draft.processAdequacyGrade}` : ''}`}
+              dept={<EvalText value={draft?.processAdequacy} />}
+              ir={ir?.processAdequacy}
+              irGrade={ir?.processAdequacyGrade}
+            />
+            <DualEvalBox
+              itemTitle={`성과지표 적절성${draft?.kpiAdequacyGrade ? ` · ${draft.kpiAdequacyGrade}` : ''}`}
+              dept={<EvalText value={draft?.kpiAdequacy} />}
+              ir={ir?.kpiAdequacy}
+              irGrade={ir?.kpiAdequacyGrade}
+            />
+          </NumberedSection>
+
+          <NumberedSection n={5} title="만족도 조사 기반 자체평가">
+            <DualEvalBox
+              itemTitle="만족도 세부항목"
+              dept={<SurveyItemsTable items={draft?.surveyItems ?? []} />}
+              ir={ir?.surveyItemsComment}
+            />
+            <DualEvalBox
+              itemTitle="만족도조사에 따른 환류계획"
+              dept={<SurveyPlansTable plans={draft?.surveyPlans ?? []} />}
+              ir={ir?.surveyPlansComment}
+            />
+          </NumberedSection>
         </div>
-
-        <div>
-          <SectionLabel>② 성과지표 달성값 — {year}학년도</SectionLabel>
-          <KpiTable task={task} year={year} poEvals={draft?.kpiPoEvals} />
-          <IrField label="성과지표 의견" value={draft?.irEval?.kpiComment} />
-        </div>
-
-        <div className="space-y-3">
-          <SectionLabel>부서 자체평가</SectionLabel>
-          <Field label="③ 주요 성과(우수사례)" value={draft?.deptSummary} />
-          <IrField label="주요 성과(우수사례)" value={draft?.irEval?.achievements} />
-          <Field
-            label="부서 자체분석 및 개선방향"
-            value={draft?.deptAnalysis}
-          />
-          <IrField
-            label="부서 자체분석 및 개선방향"
-            value={draft?.irEval?.analysis}
-          />
-          <Field
-            label={`④ 예결산의 적절성${draft?.budgetAdequacyGrade ? ` · ${draft.budgetAdequacyGrade}` : ''}`}
-            value={draft?.budgetAdequacy}
-          />
-          <IrField
-            label={`예결산의 적절성${draft?.irEval?.budgetAdequacyGrade ? ` · ${draft.irEval.budgetAdequacyGrade}` : ''}`}
-            value={draft?.irEval?.budgetAdequacy}
-          />
-          <Field
-            label={`절차상 적절성${draft?.processAdequacyGrade ? ` · ${draft.processAdequacyGrade}` : ''}`}
-            value={draft?.processAdequacy}
-          />
-          <IrField
-            label={`절차상 적절성${draft?.irEval?.processAdequacyGrade ? ` · ${draft.irEval.processAdequacyGrade}` : ''}`}
-            value={draft?.irEval?.processAdequacy}
-          />
-          <Field
-            label={`성과지표 적절성${draft?.kpiAdequacyGrade ? ` · ${draft.kpiAdequacyGrade}` : ''}`}
-            value={draft?.kpiAdequacy}
-          />
-          <IrField
-            label={`성과지표 적절성${draft?.irEval?.kpiAdequacyGrade ? ` · ${draft.irEval.kpiAdequacyGrade}` : ''}`}
-            value={draft?.irEval?.kpiAdequacy}
-          />
-          <div>
-            <SectionLabel>만족도 세부항목</SectionLabel>
-            <SurveyItemsTable items={draft?.surveyItems ?? []} />
-            <div className="mt-2">
-              <IrField
-                label="만족도 세부항목 의견"
-                value={draft?.irEval?.surveyItemsComment}
-              />
-            </div>
-          </div>
-          <div>
-            <SectionLabel>만족도조사에 따른 환류계획</SectionLabel>
-            <SurveyPlansTable plans={draft?.surveyPlans ?? []} />
-            <div className="mt-2">
-              <IrField
-                label="환류계획 의견"
-                value={draft?.irEval?.surveyPlansComment}
-              />
-            </div>
-          </div>
-        </div>
-
-        <IrSection ir={draft?.irEval} units={units} />
       </CardContent>
     </Card>
   );

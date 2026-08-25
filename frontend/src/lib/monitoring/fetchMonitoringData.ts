@@ -8,11 +8,12 @@ import {
   type TargetTreeNode,
 } from '@/lib/api';
 import { hasHierarchyData, readYearValue } from './aggregate';
-import { MONITORING_KPI_MAP } from './catalog';
+import { MONITORING_KPI_MAP, STUDENT_COUNT_COMPONENT_SHORT_LABELS } from './catalog';
 import { composeAccountingHierarchy } from './composeAccounting';
 import {
   composeStudentCountHierarchy,
   emptyYearMap,
+  selectedComponentKeys,
 } from './composeStudentCount';
 import { allDeptCodes, parseOrgTree } from './orgTree';
 import {
@@ -25,6 +26,7 @@ import type {
   MonitoringKpiDef,
   MonitoringKpiId,
   OrgStructure,
+  StudentCountBreakdown,
   StudentCountComponentKey,
   StudentCountToggles,
   YearValueMap,
@@ -87,6 +89,8 @@ export interface KpiViewModel {
   depts: Record<string, YearValueMap>;
   yoy: YoySnapshot;
   kpi: MonitoringKpiDef;
+  /** 재학생 수: 켠 구성 항목별 학과 값 (비교 누적 차트용) */
+  studentBreakdown?: StudentCountBreakdown;
   accounting?: {
     income: YearValueMap;
     expense: YearValueMap;
@@ -356,7 +360,21 @@ export function buildKpiViews(
     years,
     deptCodes,
   );
+  const studentKeys = selectedComponentKeys(toggles);
   if (bundle.studentMeta.found) {
+    const studentBreakdown: StudentCountBreakdown | undefined =
+      studentKeys.length > 0
+        ? {
+            keys: studentKeys,
+            labels: STUDENT_COUNT_COMPONENT_SHORT_LABELS,
+            depts: Object.fromEntries(
+              studentKeys.map((key) => [
+                key,
+                bundle.studentComponents[key]?.depts ?? {},
+              ]),
+            ) as StudentCountBreakdown['depts'],
+          }
+        : undefined;
     views.push({
       id: 'student-count',
       label: bundle.studentMeta.label,
@@ -374,6 +392,7 @@ export function buildKpiViews(
         selectedYear,
       ),
       kpi: bundle.studentMeta.kpi,
+      studentBreakdown,
     });
   }
 

@@ -71,6 +71,13 @@ export interface HierarchyValues {
   depts: Record<string, YearValueMap>;
 }
 
+/** 재학생 수 토글로 켠 구성 항목의 학과별 값 */
+export interface StudentCountBreakdown {
+  keys: StudentCountComponentKey[];
+  labels: Record<StudentCountComponentKey, string>;
+  depts: Record<StudentCountComponentKey, Record<string, YearValueMap>>;
+}
+
 export interface ResolvedDirectKpi {
   kpi: MonitoringKpiDef;
   /** 지표 DB 빌더에서 바꾼 지표명(없으면 kpi.label) */

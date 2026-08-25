@@ -53,3 +53,30 @@ export function highlightBarFill(
   if (band === 'bottom') return COMPARE_BAR_COLORS.bottom;
   return kind === 'series' ? COMPARE_BAR_COLORS.series : COMPARE_BAR_COLORS.dept;
 }
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+/** 같은 색을 흰색 쪽으로 섞어 누적 구간 음영만 구분 */
+export function mixHexWithWhite(hex: string, t: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const mix = (c: number) => Math.round(c + (255 - c) * Math.min(1, Math.max(0, t)));
+  return `#${[mix(r), mix(g), mix(b)]
+    .map((v) => v.toString(16).padStart(2, '0'))
+    .join('')}`.toUpperCase();
+}
+
+export function stackShade(
+  baseHex: string,
+  index: number,
+  count: number,
+): string {
+  if (count <= 1) return baseHex;
+  return mixHexWithWhite(baseHex, (index / (count - 1)) * 0.42);
+}

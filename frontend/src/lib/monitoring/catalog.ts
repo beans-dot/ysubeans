@@ -34,6 +34,17 @@ export const STUDENT_COUNT_COMPONENT_NAMES: Record<
   deferred: '학사학위취득유예학생 수',
 };
 
+/** 토글·누적 차트용 짧은 구성 항목명 */
+export const STUDENT_COUNT_COMPONENT_SHORT_LABELS: Record<
+  StudentCountComponentKey,
+  string
+> = {
+  inner: '정원 내',
+  outer: '정원 외',
+  leave: '휴학생',
+  deferred: '학위유예',
+};
+
 const KPI_DEFS: Array<Omit<MonitoringKpiDef, 'metricCode'>> = [
   {
     id: 'student-count',
