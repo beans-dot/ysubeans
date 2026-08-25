@@ -12,7 +12,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { Ticker } from './Ticker';
 
 const NAV: Array<{ href: string; label: string; roles: UserRole[] }> = [
-  { href: '/admin', label: '관리자', roles: ['admin'] },
+  { href: '/admin', label: '시스템관리', roles: ['admin'] },
   {
     href: '/update-history',
     label: '업데이트 이력',
@@ -46,47 +46,27 @@ export function Header() {
 
   const onLogout = async () => {
     await logout();
-    // Hard navigate so middleware sees cleared cookies and soft-nav races are avoided
     window.location.assign('/login');
   };
 
   return (
-    <header
-      className={cn(
-        'sticky top-0 z-40 w-full',
-        isHome
-          ? 'border-b border-white/10 bg-black/30 backdrop-blur-sm'
-          : 'border-b bg-background/95 backdrop-blur',
-      )}
-    >
+    <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur">
       <div className="flex h-16 min-w-0 items-center gap-2 px-3 sm:gap-4 sm:px-6">
         <Link
           href={homeHref}
           className="flex min-w-0 max-w-[70%] shrink items-center gap-4 sm:max-w-none sm:shrink-0 sm:gap-6"
         >
-          <div
-            className={cn(
-              'shrink-0',
-              isHome && 'rounded-md bg-white/95 px-1.5 py-0.5',
-            )}
-          >
-            <div className="relative h-[34px] w-[154px] sm:h-[39px] sm:w-[177px]">
-              <Image
-                src="/logo.png"
-                alt="연성대학교"
-                fill
-                sizes="(max-width: 640px) 154px, 177px"
-                style={{ objectFit: 'contain' }}
-                priority
-              />
-            </div>
+          <div className="relative h-[34px] w-[154px] shrink-0 sm:h-[39px] sm:w-[177px]">
+            <Image
+              src="/logo.png"
+              alt="연성대학교"
+              fill
+              sizes="(max-width: 640px) 154px, 177px"
+              style={{ objectFit: 'contain' }}
+              priority
+            />
           </div>
-          <span
-            className={cn(
-              'font-emphasis truncate text-[1.05rem] sm:text-[1.2rem]',
-              isHome ? 'text-white' : 'text-foreground',
-            )}
-          >
+          <span className="font-emphasis truncate text-[1.05rem] text-foreground sm:text-[1.2rem]">
             YSU IR Library
           </span>
         </Link>
@@ -108,25 +88,16 @@ export function Header() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'rounded-md px-2 py-2 text-sm font-bold transition-colors sm:px-3',
-                    isHome
-                      ? pathname === item.href
-                        ? 'bg-white/15 text-white'
-                        : 'text-white/90 hover:bg-white/10 hover:text-white'
-                      : pathname?.startsWith(item.href)
-                        ? 'text-primary hover:bg-accent'
-                        : 'text-muted-foreground hover:bg-accent',
+                    'rounded-md px-2 py-2 text-sm font-bold transition-colors hover:bg-accent sm:px-3',
+                    pathname?.startsWith(item.href)
+                      ? 'text-primary'
+                      : 'text-muted-foreground',
                   )}
                 >
                   {item.label}
                 </Link>
               ))}
-              <span
-                className={cn(
-                  'mx-1 hidden text-sm font-bold lg:inline',
-                  isHome ? 'text-white' : 'text-blue-900',
-                )}
-              >
+              <span className="mx-1 hidden text-sm font-bold text-blue-900 lg:inline">
                 {user.name}
               </span>
               <Button
@@ -134,11 +105,7 @@ export function Header() {
                 variant="ghost"
                 size="sm"
                 onClick={onLogout}
-                className={cn(
-                  'gap-1 px-2 sm:px-3',
-                  isHome &&
-                    'text-white hover:bg-white/10 hover:text-white',
-                )}
+                className="gap-1 px-2 sm:px-3"
               >
                 <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline">로그아웃</span>

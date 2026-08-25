@@ -37,7 +37,7 @@ export default function AdminPage() {
     <AuthGuard adminOnly>
       <div className="px-6 py-6">
         <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-2xl">관리자</h1>
+          <h1 className="text-2xl">시스템관리</h1>
           <div className="flex items-center gap-3">
             {batchMsg && (
               <span className="text-sm text-muted-foreground">{batchMsg}</span>
