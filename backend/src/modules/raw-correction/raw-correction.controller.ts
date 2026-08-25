@@ -14,7 +14,18 @@ import { Request } from 'express';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { DeleteRawCorrectionDto } from './dto/delete-raw-correction.dto';
 import { UpdateRawValueDto } from './dto/update-raw-value.dto';
-import { RawCorrectionService } from './raw-correction.service';
+import {
+  type EditableSourceType,
+  RawCorrectionService,
+} from './raw-correction.service';
+
+function parseEditableSourceType(raw?: string): EditableSourceType {
+  if (raw == null || raw === '' || raw === 'INTERNAL') return 'INTERNAL';
+  if (raw === 'MONITORING') return 'MONITORING';
+  throw new BadRequestException(
+    'sourceType은 INTERNAL 또는 MONITORING 이어야 합니다.',
+  );
+}
 
 function clientIpFromRequest(req: Request): string | null {
   return (
@@ -33,13 +44,16 @@ export class RawCorrectionController {
   constructor(private readonly rawCorrectionService: RawCorrectionService) {}
 
   @Get('years')
-  listYears() {
-    return this.rawCorrectionService.listYears();
+  listYears(@Query('sourceType') sourceType?: string) {
+    return this.rawCorrectionService.listYears(
+      parseEditableSourceType(sourceType),
+    );
   }
 
   @Get()
   list(
     @Query('year') year?: string,
+    @Query('sourceType') sourceType?: string,
     @Query('univCode') univCode?: string,
     @Query('deptCode') deptCode?: string,
     @Query('q') q?: string,
@@ -68,6 +82,7 @@ export class RawCorrectionController {
 
     return this.rawCorrectionService.list({
       year: parsedYear,
+      sourceType: parseEditableSourceType(sourceType),
       univCode: univCode?.trim() || undefined,
       deptCode: deptCode?.trim() || undefined,
       q: q?.trim() || undefined,

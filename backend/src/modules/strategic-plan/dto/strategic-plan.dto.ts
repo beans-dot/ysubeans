@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -296,12 +297,63 @@ export class UpsertEvaluationDto {
   @IsOptional()
   @IsString()
   surveyFeedback?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  taskActivities?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsObject()
+  kpiPoEvals?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsString()
+  budgetAdequacy?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  budgetAdequacyGrade?: string | null;
+
+  @IsOptional()
+  @IsString()
+  processAdequacy?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  processAdequacyGrade?: string | null;
+
+  @IsOptional()
+  @IsString()
+  kpiAdequacy?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  kpiAdequacyGrade?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  surveyItems?: unknown[] | null;
+
+  @IsOptional()
+  @IsArray()
+  surveyPlans?: unknown[] | null;
+
+  @IsOptional()
+  @IsObject()
+  irEval?: Record<string, unknown> | null;
 }
 
 export class UpsertBudgetDto {
   @IsString()
   @MaxLength(60)
   taskCode: string;
+
+  @IsString()
+  @MaxLength(80)
+  subtaskCode: string;
 
   @IsInt()
   @Min(SP_MIN_YEAR)
@@ -345,6 +397,27 @@ export class UpdateFundSourceDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class CreateDepartmentDto {
+  @IsString()
+  @MaxLength(100)
+  deptName: string;
+
+  @IsOptional()
+  @IsInt()
+  displayOrder?: number;
+}
+
+export class UpdateDepartmentDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  deptName?: string;
+
+  @IsOptional()
+  @IsInt()
+  displayOrder?: number;
 }
 
 export class MottoPairDto {
@@ -394,6 +467,11 @@ export class UpdateVisionDto {
   @IsOptional()
   @IsString()
   mission?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200000)
+  contentHtml?: string | null;
 
   @IsOptional()
   @IsArray()

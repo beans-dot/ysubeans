@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   IrSpCompareData,
+  IrSpDepartment,
   IrSpEvaluation,
   IrSpFundSource,
   IrSpGoal,
@@ -31,6 +32,7 @@ import { StrategicPlanService } from './strategic-plan.service';
       IrSpEvaluation,
       IrSpCompareData,
       IrSpFundSource,
+      IrSpDepartment,
       IrSpTaskBudget,
     ]),
   ],

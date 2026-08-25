@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { IrUpdateLog } from '../../entities';
+import { IrUpdateLog, type UpdateLogDetail } from '../../entities';
 
 @Injectable()
 export class UpdateLogService {
@@ -24,7 +24,11 @@ export class UpdateLogService {
     });
   }
 
-  async add(data: { updateType: string; logText: string }): Promise<IrUpdateLog> {
+  async add(data: {
+    updateType: string;
+    logText: string;
+    detail?: UpdateLogDetail | null;
+  }): Promise<IrUpdateLog> {
     return this.logRepo.save(this.logRepo.create(data));
   }
 }

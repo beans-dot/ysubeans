@@ -63,11 +63,17 @@ export interface SpVision {
   foundingPhilosophy: string[];
   mottoPairs: SpMottoPair[];
   talent3c: { name: string; items: string[] } | null;
+  /** 비전 체계 화면 본문(게시글형 HTML) */
+  contentHtml: string | null;
 }
 
 export interface SpTree {
   years: number[];
-  scales: { deptGrades: string[]; irGrades: string[] };
+  scales: {
+    deptGrades: string[];
+    irGrades: string[];
+    surveyPlanGrades?: string[];
+  };
   vision: SpVision | null;
   goals: SpGoal[];
   tasks: SpTask[];
@@ -112,6 +118,12 @@ export interface SpFundSource {
   isActive: boolean;
 }
 
+export interface SpDepartment {
+  deptId: number;
+  deptName: string;
+  displayOrder: number;
+}
+
 export interface SpEvaluation {
   evaluationId: number;
   taskCode: string;
@@ -125,32 +137,104 @@ export interface SpEvaluation {
   surveyGrade: string | null;
   surveyAnalysis: string | null;
   surveyFeedback: string | null;
+  taskActivities: Record<string, SpEvalActivity[]> | null;
+  kpiPoEvals: Record<string, string> | null;
+  budgetAdequacy: string | null;
+  budgetAdequacyGrade: string | null;
+  processAdequacy: string | null;
+  processAdequacyGrade: string | null;
+  kpiAdequacy: string | null;
+  kpiAdequacyGrade: string | null;
+  surveyItems: SpSurveyItem[] | null;
+  surveyPlans: SpSurveyPlan[] | null;
+  irEval: SpIrEvalOverlay | null;
   updatedBy: string | null;
 }
 
 export interface SpBudget {
   taskCode: string;
+  subtaskCode: string;
   year: number;
   fundSourceId: number;
   budgetAmount: number | null;
   settlementAmount: number | null;
 }
 
-/** 대시보드에서 쓰는 자체평가 입력 필드 키 */
-export type SpEvaluationField =
+export interface SpEvalActivity {
+  id: string;
+  activityName: string;
+  performance: string;
+  fundSourceId: number | null;
+  executionAmount: string;
+  selfCheck: string;
+  nextYearFeedback: string;
+}
+
+export interface SpSurveyItem {
+  id: string;
+  name: string;
+  prevValue: string;
+  thisValue: string;
+  selfEval: string;
+}
+
+export interface SpSurveyPlan {
+  id: string;
+  category: string;
+  request: string;
+  planGrade: string;
+  planText: string;
+}
+
+export interface SpIrEvalOverlay {
+  taskComments?: Record<string, string>;
+  kpiComment?: string;
+  achievements?: string;
+  analysis?: string;
+  budgetAdequacy?: string;
+  budgetAdequacyGrade?: string;
+  processAdequacy?: string;
+  processAdequacyGrade?: string;
+  kpiAdequacy?: string;
+  kpiAdequacyGrade?: string;
+  surveyText1?: string;
+  surveyText2?: string;
+  surveyItemsComment?: string;
+  surveyPlansComment?: string;
+}
+
+/** 대시보드에서 쓰는 자체평가 문자열 필드 */
+export type SpEvaluationTextField =
   | 'deptSummary'
   | 'deptAnalysis'
-  | 'deptGrade'
-  | 'deptImprovement'
-  | 'irGrade'
-  | 'irFeedback'
-  | 'surveyGrade'
+  | 'budgetAdequacy'
+  | 'budgetAdequacyGrade'
+  | 'processAdequacy'
+  | 'processAdequacyGrade'
+  | 'kpiAdequacy'
+  | 'kpiAdequacyGrade'
   | 'surveyAnalysis'
   | 'surveyFeedback';
 
-export type SpEvaluationDraft = Partial<Record<SpEvaluationField, string>>;
+export interface SpEvaluationDraft {
+  deptSummary?: string;
+  deptAnalysis?: string;
+  budgetAdequacy?: string;
+  budgetAdequacyGrade?: string;
+  processAdequacy?: string;
+  processAdequacyGrade?: string;
+  kpiAdequacy?: string;
+  kpiAdequacyGrade?: string;
+  surveyAnalysis?: string;
+  surveyFeedback?: string;
+  taskActivities?: Record<string, SpEvalActivity[]>;
+  kpiPoEvals?: Record<string, string>;
+  surveyItems?: SpSurveyItem[];
+  surveyPlans?: SpSurveyPlan[];
+  irEval?: SpIrEvalOverlay;
+}
 
-/** 예산·결산 입력 상태: `${taskCode}::${fundSourceId}` → 문자열 입력값 */
+/** 예산·결산 입력 상태: `${taskCode}::${subtaskCode}::${fundSourceId}` → 문자열 입력값 */
 export type SpBudgetDraft = Record<string, { budget: string; settlement: string }>;
 
 export type SpWriteStatus = 'done' | 'part' | 'none';

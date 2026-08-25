@@ -1,21 +1,31 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   ParseIntPipe,
   Post,
   Put,
   Query,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { Public } from '../auth/decorators/public.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtPayload } from '../auth/jwt-payload';
 import {
+  CreateDepartmentDto,
   CreateFundSourceDto,
   KpiValueDto,
   ReplaceSubtasksDto,
+  UpdateDepartmentDto,
   UpdateFundSourceDto,
   UpdateGoalDto,
   UpdateKpiDto,
@@ -211,6 +221,72 @@ export class StrategicPlanController {
     @Param('fundSourceId', ParseIntPipe) fundSourceId: number,
   ) {
     return this.service.deleteFundSource(fundSourceId);
+  }
+
+  /* ── 관리자: 부서 ── */
+
+  @Roles('admin')
+  @Get('departments')
+  listDepartments() {
+    return this.service.listDepartments();
+  }
+
+  @Roles('admin')
+  @Post('departments')
+  createDepartment(@Body() dto: CreateDepartmentDto) {
+    return this.service.createDepartment(dto);
+  }
+
+  @Roles('admin')
+  @Put('departments/:deptId')
+  updateDepartment(
+    @Param('deptId', ParseIntPipe) deptId: number,
+    @Body() dto: UpdateDepartmentDto,
+  ) {
+    return this.service.updateDepartment(deptId, dto);
+  }
+
+  @Roles('admin')
+  @Delete('departments/:deptId')
+  deleteDepartment(@Param('deptId', ParseIntPipe) deptId: number) {
+    return this.service.deleteDepartment(deptId);
+  }
+
+  /* ── 비전 체계 본문 이미지 ── */
+
+  @Public()
+  @Get('vision/images/:filename')
+  @Header('Cache-Control', 'public, max-age=31536000, immutable')
+  getVisionImage(@Param('filename') filename: string) {
+    const { stream, contentType } = this.service.getVisionImage(filename);
+    return new StreamableFile(stream, { type: contentType });
+  }
+
+  @Roles('admin')
+  @Post('vision/images')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (!/^image\/(jpeg|png|gif|webp)$/.test(file.mimetype)) {
+          cb(
+            new BadRequestException(
+              'jpeg, png, gif, webp 이미지만 올릴 수 있습니다.',
+            ),
+            false,
+          );
+          return;
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  uploadVisionImage(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('업로드된 파일이 없습니다.');
+    }
+    return this.service.saveVisionImage(file);
   }
 
   /* ── 관리자: 비전·비교 ── */

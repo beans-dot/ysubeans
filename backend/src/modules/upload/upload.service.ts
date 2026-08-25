@@ -3,11 +3,15 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import * as ExcelJS from 'exceljs';
 import { DataSource, EntityManager, In } from 'typeorm';
 import {
+  IrDepartment,
+  IrInternalDepartment,
   IrMetricCategory,
   IrMetricRegistry,
   IrRawData,
   IrUpdateLog,
   type MetricSourceType,
+  type UpdateLogDetail,
+  type UpdateLogMetricDetail,
 } from '../../entities';
 import { UNCATEGORIZED_CATEGORY_NAME } from '../metrics/metric.constants';
 import {
@@ -264,7 +268,11 @@ export class UploadService {
     inputs: ParsedRowInput[],
     uncategorizedId: number,
     sourceType: Extract<MetricSourceType, 'INTERNAL' | 'MONITORING'>,
-  ): Promise<{ rows: ParsedRow[]; metricsCreated: number }> {
+  ): Promise<{
+    rows: ParsedRow[];
+    metricsCreated: number;
+    createdMetricIds: number[];
+  }> {
     const metricRepo = manager.getRepository(IrMetricRegistry);
 
     const uniqueNames = Array.from(
@@ -334,6 +342,7 @@ export class UploadService {
 
     const nameToId = new Map<string, number>();
     let metricsCreated = 0;
+    const createdMetricIds: number[] = [];
 
     for (const name of uniqueNames) {
       const found = findMatch(name);
@@ -356,6 +365,7 @@ export class UploadService {
       existing.push(created);
       nameToId.set(name, created.metricId);
       metricsCreated++;
+      createdMetricIds.push(created.metricId);
     }
 
     const rows: ParsedRow[] = inputs.map((r) => {
@@ -387,7 +397,97 @@ export class UploadService {
       return { ...r, metricId: nameToId.get(r.metricName)! };
     });
 
-    return { rows, metricsCreated };
+    return { rows, metricsCreated, createdMetricIds };
+  }
+
+  private deptKey(univCode: string, deptCode: string): string {
+    return `${univCode}::${deptCode}`;
+  }
+
+  private async resolveDeptNameMap(
+    manager: EntityManager,
+    rows: ParsedRow[],
+  ): Promise<Map<string, string>> {
+    const pairs = Array.from(
+      new Map(
+        rows
+          .filter((r) => r.deptCode && r.deptCode !== '_ALL_')
+          .map((r) => [
+            this.deptKey(r.univCode, r.deptCode),
+            { univCode: r.univCode, deptCode: r.deptCode },
+          ]),
+      ).values(),
+    );
+    if (pairs.length === 0) return new Map();
+
+    const univCodes = Array.from(new Set(pairs.map((p) => p.univCode)));
+    const deptCodes = Array.from(new Set(pairs.map((p) => p.deptCode)));
+
+    const [publicDepts, internalDepts] = await Promise.all([
+      manager.getRepository(IrDepartment).find({
+        where: { univCode: In(univCodes), deptCode: In(deptCodes) },
+      }),
+      manager.getRepository(IrInternalDepartment).find({
+        where: { univCode: In(univCodes), deptCode: In(deptCodes) },
+      }),
+    ]);
+
+    const map = new Map<string, string>();
+    for (const d of publicDepts) {
+      map.set(this.deptKey(d.univCode, d.deptCode), d.deptName);
+    }
+    for (const d of internalDepts) {
+      map.set(this.deptKey(d.univCode, d.deptCode), d.deptName);
+    }
+    return map;
+  }
+
+  private async buildUploadDetail(
+    manager: EntityManager,
+    rows: ParsedRow[],
+    createdMetricIds: Set<number>,
+  ): Promise<UpdateLogDetail> {
+    const metricIds = Array.from(new Set(rows.map((r) => r.metricId)));
+    const metrics =
+      metricIds.length > 0
+        ? await manager.getRepository(IrMetricRegistry).find({
+            where: { metricId: In(metricIds) },
+          })
+        : [];
+    const nameById = new Map(metrics.map((m) => [m.metricId, m.metricName]));
+    const deptNameMap = await this.resolveDeptNameMap(manager, rows);
+
+    const deptsByMetric = new Map<number, Set<string>>();
+    for (const r of rows) {
+      if (!r.deptCode || r.deptCode === '_ALL_') continue;
+      let set = deptsByMetric.get(r.metricId);
+      if (!set) {
+        set = new Set();
+        deptsByMetric.set(r.metricId, set);
+      }
+      set.add(
+        deptNameMap.get(this.deptKey(r.univCode, r.deptCode)) ?? r.deptCode,
+      );
+    }
+
+    const details: UpdateLogMetricDetail[] = metricIds.map((id) => {
+      const deptNames = Array.from(deptsByMetric.get(id) ?? []).sort((a, b) =>
+        a.localeCompare(b, 'ko'),
+      );
+      return {
+        metricName: nameById.get(id) ?? '(알 수 없음)',
+        isNew: createdMetricIds.has(id),
+        sampleDept: deptNames[0] ?? null,
+        deptCount: deptNames.length,
+      };
+    });
+
+    details.sort((a, b) => {
+      if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
+      return a.metricName.localeCompare(b.metricName, 'ko');
+    });
+
+    return { metrics: details };
   }
 
   /**
@@ -409,12 +509,13 @@ export class UploadService {
           manager,
           sourceType,
         );
-        const { rows, metricsCreated } = await this.resolveMetricIds(
-          manager,
-          inputs,
-          uncategorized.categoryId,
-          sourceType,
-        );
+        const { rows, metricsCreated, createdMetricIds } =
+          await this.resolveMetricIds(
+            manager,
+            inputs,
+            uncategorized.categoryId,
+            sourceType,
+          );
 
         const existing = await rawRepo
           .createQueryBuilder('r')
@@ -499,9 +600,16 @@ export class UploadService {
         // 학과단위(_ALL_ 아님) raw가 있는 지표 → 지표명에 (학과별) 보장
         await syncDeptLevelMetricNames(manager);
 
+        const detail = await this.buildUploadDetail(
+          manager,
+          rows,
+          new Set(createdMetricIds),
+        );
+
         await manager.getRepository(IrUpdateLog).save({
           updateType: 'EXCEL_UPLOAD',
           logText: `자체 데이터 엑셀 업로드 (신규 ${inserted}건, 갱신 ${updated}건, 신규지표 ${metricsCreated}개)`,
+          detail,
         });
 
         return {

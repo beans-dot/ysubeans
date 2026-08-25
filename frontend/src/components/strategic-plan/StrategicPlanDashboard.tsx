@@ -7,6 +7,7 @@ import {
   taskMatches,
   type SpFilterState,
 } from '@/lib/strategic-plan/filters';
+import { SP_SURVEY_PLAN_GRADES } from '@/lib/strategic-plan/evalDraft';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
   SP_YEAR_VIEWS,
@@ -134,14 +135,9 @@ export function StrategicPlanDashboard() {
           </div>
         )}
 
-        {view === 'vision' &&
-          (tree.vision ? (
-            <VisionPanel vision={tree.vision} />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              비전 체계 내용이 아직 없습니다. 관리자 화면에서 입력해 주세요.
-            </p>
-          ))}
+        {view === 'vision' && (
+          <VisionPanel vision={tree.vision} canEdit={isAdmin()} />
+        )}
 
         {view === 'strategy' && (
           <>
@@ -163,8 +159,11 @@ export function StrategicPlanDashboard() {
         {view === 'eval' && (
           <EvaluationView
             tasks={tree.tasks}
+            fundSources={fundSources}
             deptGrades={tree.scales.deptGrades}
-            irGrades={tree.scales.irGrades}
+            surveyPlanGrades={
+              tree.scales.surveyPlanGrades ?? [...SP_SURVEY_PLAN_GRADES]
+            }
             canEditResults={isAdmin()}
           />
         )}
@@ -187,7 +186,10 @@ export function StrategicPlanDashboard() {
         )}
 
         {view === 'eval-report' && (
-          <EvaluationReportView tasks={tree.tasks} />
+          <EvaluationReportView
+            tasks={tree.tasks}
+            fundSources={fundSources}
+          />
         )}
       </div>
     </div>

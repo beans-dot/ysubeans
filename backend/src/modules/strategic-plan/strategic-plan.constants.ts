@@ -10,6 +10,13 @@ export const SP_DEPT_GRADES = ['미흡', '보통', '우수'] as const;
 /** IR센터 평가 척도 (원문) */
 export const SP_IR_GRADES = ['우수', '보통', '미흡'] as const;
 
+/** 만족도조사 환류계획 반영 구분 */
+export const SP_SURVEY_PLAN_GRADES = [
+  '신속반영',
+  '점진반영',
+  '반영불가',
+] as const;
+
 /** 재원 유형 초기값. 이후에는 관리자가 화면에서 수정한다. */
 export const SP_DEFAULT_FUND_SOURCES = [
   '교비',

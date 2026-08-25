@@ -147,9 +147,7 @@ export function DeptView({
                         >
                           {task.strategyId}
                         </Badge>
-                        <Badge variant="outline">
-                          {task.taskCode}
-                        </Badge>
+                        <Badge variant="code">{task.taskCode}</Badge>
                         <span>{task.taskName}</span>
                       </li>
                     ))}

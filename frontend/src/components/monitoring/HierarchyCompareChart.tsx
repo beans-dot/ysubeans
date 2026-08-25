@@ -36,6 +36,34 @@ const SORT_KEYS: Array<{ key: CompareSortKey; label: string }> = [
   { key: 'order', label: '학과나열순' },
 ];
 
+/** 행 높이(학과 간격) 기존 28px 대비 +10% */
+const ROW_HEIGHT = Math.round(28 * 1.1);
+/** Y축 범례 폭 기존 148px 대비 +30% — 긴 학과명을 한 줄에 가깝게 */
+const Y_AXIS_WIDTH = Math.round(148 * 1.3);
+
+function AxisNameTick({
+  x,
+  y,
+  payload,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string };
+}) {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="end"
+      dominantBaseline="middle"
+      fontSize={11}
+      fill="currentColor"
+    >
+      {payload?.value}
+    </text>
+  );
+}
+
 export function HierarchyCompareChart({
   view,
   org,
@@ -69,12 +97,11 @@ export function HierarchyCompareChart({
       ...row,
       band: bands.get(row.id) ?? 'none',
       barValue: row.value,
-      axisLabel:
-        row.kind === 'series' ? `[계열] ${row.name}` : `[학과] ${row.name}`,
+      axisLabel: row.name,
     }));
   }, [rows, view.kpi.direction]);
 
-  const height = Math.max(280, chartData.length * 28);
+  const height = Math.max(280, chartData.length * ROW_HEIGHT);
 
   if (!view.hasHierarchy) {
     return (
@@ -186,8 +213,8 @@ export function HierarchyCompareChart({
               <YAxis
                 type="category"
                 dataKey="axisLabel"
-                width={148}
-                tick={{ fontSize: 11 }}
+                width={Y_AXIS_WIDTH}
+                tick={AxisNameTick}
                 interval={0}
               />
               <Tooltip

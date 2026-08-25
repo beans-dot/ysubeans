@@ -2,10 +2,13 @@ import { api } from '@/lib/api';
 import type {
   SpBudget,
   SpCompare,
+  SpDepartment,
   SpEvaluation,
+  SpEvaluationDraft,
   SpFundSource,
   SpKpi,
   SpTree,
+  SpVision,
 } from './types';
 
 export async function fetchSpTree() {
@@ -26,6 +29,11 @@ export async function fetchSpFundSources(includeInactive = false) {
   return data;
 }
 
+export async function fetchSpDepartments() {
+  const { data } = await api.get<SpDepartment[]>('/strategic-plan/departments');
+  return data;
+}
+
 export async function fetchSpEvaluations(year: number) {
   const { data } = await api.get<SpEvaluation[]>(
     '/strategic-plan/evaluations',
@@ -34,19 +42,12 @@ export async function fetchSpEvaluations(year: number) {
   return data;
 }
 
-export async function saveSpEvaluation(payload: {
-  taskCode: string;
-  year: number;
-  deptSummary?: string | null;
-  deptAnalysis?: string | null;
-  deptGrade?: string | null;
-  deptImprovement?: string | null;
-  irGrade?: string | null;
-  irFeedback?: string | null;
-  surveyGrade?: string | null;
-  surveyAnalysis?: string | null;
-  surveyFeedback?: string | null;
-}) {
+export async function saveSpEvaluation(
+  payload: {
+    taskCode: string;
+    year: number;
+  } & Partial<SpEvaluationDraft>,
+) {
   const { data } = await api.put<SpEvaluation>(
     '/strategic-plan/evaluations',
     payload,
@@ -63,6 +64,7 @@ export async function fetchSpBudgets(year: number) {
 
 export async function saveSpBudget(payload: {
   taskCode: string;
+  subtaskCode: string;
   year: number;
   fundSourceId: number;
   budgetAmount?: number | null;
@@ -211,6 +213,21 @@ export async function deleteSpFundSource(fundSourceId: number) {
   return data;
 }
 
+export async function createSpDepartment(deptName: string) {
+  await api.post('/strategic-plan/departments', { deptName });
+}
+
+export async function updateSpDepartment(
+  deptId: number,
+  payload: { deptName?: string; displayOrder?: number },
+) {
+  await api.put(`/strategic-plan/departments/${deptId}`, payload);
+}
+
+export async function deleteSpDepartment(deptId: number) {
+  await api.delete(`/strategic-plan/departments/${deptId}`);
+}
+
 export async function updateSpVision(payload: {
   officialName?: string | null;
   planPeriod?: string | null;
@@ -221,8 +238,23 @@ export async function updateSpVision(payload: {
   foundingPhilosophy?: string[];
   mottoPairs?: Array<{ motto: string; talent: string }>;
   talent3c?: { name: string; items: string[] } | null;
+  contentHtml?: string | null;
 }) {
-  await api.put('/strategic-plan/vision', payload);
+  const { data } = await api.put<SpVision>('/strategic-plan/vision', payload);
+  return data;
+}
+
+export async function uploadSpVisionImage(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post<{ filename: string; url: string }>(
+    '/strategic-plan/vision/images',
+    form,
+  );
+  return {
+    filename: data.filename,
+    url: `/api/backend${data.url}`,
+  };
 }
 
 export async function replaceSpCompare(payload: SpCompare) {

@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
+import type { UpdateLogDetail } from '../../entities';
 import { UpdateLogService } from './update-log.service';
 
 @Controller('update-log')
@@ -18,7 +19,14 @@ export class UpdateLogController {
   }
 
   @Post()
-  add(@Body() body: { updateType: string; logText: string }) {
+  add(
+    @Body()
+    body: {
+      updateType: string;
+      logText: string;
+      detail?: UpdateLogDetail | null;
+    },
+  ) {
     return this.updateLogService.add(body);
   }
 }

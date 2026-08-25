@@ -34,6 +34,10 @@ export class IrSpVision {
   @Column({ name: 'mission', type: 'text', nullable: true })
   mission: string | null;
 
+  /** 비전 체계 화면 본문(게시글형 HTML). 글자 크기·색·이미지만 허용한다. */
+  @Column({ name: 'content_html', type: 'text', nullable: true })
+  contentHtml: string | null;
+
   /** 8대 주요지표 */
   @Column({ name: 'key_indicators', type: 'jsonb', nullable: true })
   keyIndicators: string[] | null;

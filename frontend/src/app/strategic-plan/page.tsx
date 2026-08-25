@@ -9,8 +9,9 @@ export default function StrategicPlanPage() {
       <div className="sp-root mx-auto max-w-7xl px-6 py-8">
         <h1 className="mb-2 font-bold">중장기발전계획 성과관리</h1>
         <p className="mb-6 text-muted-foreground">
-          좌측 메뉴에서 화면을 고릅니다. 비전 체계는 조회만 가능하고, 중장기발전계획
-          관리에서 입력한 예결산·자체평가는 성과관리 메뉴에서 연도별로 조회합니다.
+          좌측 메뉴에서 화면을 고릅니다. 비전 체계는 저장된 내용을 조회하며,
+          관리자는 해당 화면에서 바로 수정할 수 있습니다. 중장기발전계획 관리에서
+          입력한 예결산·자체평가는 성과관리 메뉴에서 연도별로 조회합니다.
         </p>
         <StrategicPlanDashboard />
       </div>

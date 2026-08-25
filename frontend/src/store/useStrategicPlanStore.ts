@@ -14,9 +14,11 @@ import { parseAmount } from '@/lib/strategic-plan/format';
 import type {
   SpBudgetDraft,
   SpEvaluationDraft,
-  SpEvaluationField,
+  SpEvaluationTextField,
   SpFundSource,
+  SpIrEvalOverlay,
   SpTree,
+  SpVision,
 } from '@/lib/strategic-plan/types';
 
 export type SpView =
@@ -61,8 +63,12 @@ function scheduleSave(key: string, run: () => Promise<void>) {
   );
 }
 
-export function budgetKey(taskCode: string, fundSourceId: number) {
-  return `${taskCode}::${fundSourceId}`;
+export function budgetKey(
+  taskCode: string,
+  subtaskCode: string,
+  fundSourceId: number,
+) {
+  return `${taskCode}::${subtaskCode}::${fundSourceId}`;
 }
 
 function defaultYear(years: number[]): number {
@@ -107,16 +113,27 @@ interface StrategicPlanState {
 
   setEvaluationField: (
     taskCode: string,
-    field: SpEvaluationField,
+    field: SpEvaluationTextField,
     value: string,
+  ) => void;
+  setEvaluationData: (
+    taskCode: string,
+    patch: Partial<SpEvaluationDraft>,
+  ) => void;
+  setIrEvalField: (
+    taskCode: string,
+    field: keyof SpIrEvalOverlay,
+    value: string | Record<string, string>,
   ) => void;
   setBudgetField: (
     taskCode: string,
+    subtaskCode: string,
     fundSourceId: number,
     kind: 'budget' | 'settlement',
     value: string,
   ) => void;
   setKpiResult: (kpiCode: string, value: string) => void;
+  patchVision: (partial: Partial<SpVision>) => void;
 }
 
 export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
@@ -171,18 +188,24 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
         evalDraft[e.taskCode] = {
           deptSummary: e.deptSummary ?? '',
           deptAnalysis: e.deptAnalysis ?? '',
-          deptGrade: e.deptGrade ?? '',
-          deptImprovement: e.deptImprovement ?? '',
-          irGrade: e.irGrade ?? '',
-          irFeedback: e.irFeedback ?? '',
-          surveyGrade: e.surveyGrade ?? '',
+          budgetAdequacy: e.budgetAdequacy ?? '',
+          budgetAdequacyGrade: e.budgetAdequacyGrade ?? '',
+          processAdequacy: e.processAdequacy ?? '',
+          processAdequacyGrade: e.processAdequacyGrade ?? '',
+          kpiAdequacy: e.kpiAdequacy ?? '',
+          kpiAdequacyGrade: e.kpiAdequacyGrade ?? '',
           surveyAnalysis: e.surveyAnalysis ?? '',
           surveyFeedback: e.surveyFeedback ?? '',
+          taskActivities: e.taskActivities ?? {},
+          kpiPoEvals: e.kpiPoEvals ?? {},
+          surveyItems: e.surveyItems ?? [],
+          surveyPlans: e.surveyPlans ?? [],
+          irEval: e.irEval ?? {},
         };
       }
       const budgetDraft: SpBudgetDraft = {};
       for (const b of budgets) {
-        budgetDraft[budgetKey(b.taskCode, b.fundSourceId)] = {
+        budgetDraft[budgetKey(b.taskCode, b.subtaskCode, b.fundSourceId)] = {
           budget: b.budgetAmount === null ? '' : String(b.budgetAmount),
           settlement:
             b.settlementAmount === null ? '' : String(b.settlementAmount),
@@ -221,6 +244,27 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   resetFilters: () =>
     set({ goalId: '', dept: '', query: '', specializedOnly: false }),
 
+  patchVision: (partial) =>
+    set((state) => {
+      if (!state.tree) return {};
+      const current = state.tree.vision ?? {
+        officialName: null,
+        planPeriod: null,
+        structureSummary: null,
+        visionStatement: null,
+        visionGoal: null,
+        mission: null,
+        keyIndicators: [],
+        foundingPhilosophy: [],
+        mottoPairs: [],
+        talent3c: null,
+        contentHtml: null,
+      };
+      return {
+        tree: { ...state.tree, vision: { ...current, ...partial } },
+      };
+    }),
+
   setEvaluationField: (taskCode, field, value) => {
     const year = get().year;
     set((state) => ({
@@ -242,9 +286,72 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
     });
   },
 
-  setBudgetField: (taskCode, fundSourceId, kind, value) => {
+  setEvaluationData: (taskCode, patch) => {
     const year = get().year;
-    const key = budgetKey(taskCode, fundSourceId);
+    const keys = Object.keys(patch).join(',');
+    set((state) => {
+      const prev = state.evaluations[taskCode] ?? {};
+      const merged: SpEvaluationDraft = { ...prev, ...patch };
+      if (patch.taskActivities) {
+        merged.taskActivities = {
+          ...prev.taskActivities,
+          ...patch.taskActivities,
+        };
+      }
+      if (patch.kpiPoEvals) {
+        merged.kpiPoEvals = { ...prev.kpiPoEvals, ...patch.kpiPoEvals };
+      }
+      return {
+        evaluations: { ...state.evaluations, [taskCode]: merged },
+        saveError: null,
+      };
+    });
+    scheduleSave(`eval:${year}:${taskCode}:${keys}`, async () => {
+      set((s) => ({ pendingSaves: s.pendingSaves + 1 }));
+      try {
+        const draft = get().evaluations[taskCode] ?? {};
+        const payload: Partial<SpEvaluationDraft> = {};
+        for (const key of Object.keys(patch) as Array<keyof SpEvaluationDraft>) {
+          (payload as Record<string, unknown>)[key] = draft[key];
+        }
+        await saveSpEvaluation({ taskCode, year, ...payload });
+      } catch {
+        set({ saveError: '자체평가 저장에 실패했습니다.' });
+      } finally {
+        set((s) => ({ pendingSaves: Math.max(0, s.pendingSaves - 1) }));
+      }
+    });
+  },
+
+  setIrEvalField: (taskCode, field, value) => {
+    const year = get().year;
+    set((state) => {
+      const prev = state.evaluations[taskCode]?.irEval ?? {};
+      const irEval = { ...prev, [field]: value };
+      return {
+        evaluations: {
+          ...state.evaluations,
+          [taskCode]: { ...state.evaluations[taskCode], irEval },
+        },
+        saveError: null,
+      };
+    });
+    scheduleSave(`eval:${year}:${taskCode}:irEval:${String(field)}`, async () => {
+      set((s) => ({ pendingSaves: s.pendingSaves + 1 }));
+      try {
+        const irEval = get().evaluations[taskCode]?.irEval ?? {};
+        await saveSpEvaluation({ taskCode, year, irEval });
+      } catch {
+        set({ saveError: 'IR평가 저장에 실패했습니다.' });
+      } finally {
+        set((s) => ({ pendingSaves: Math.max(0, s.pendingSaves - 1) }));
+      }
+    });
+  },
+
+  setBudgetField: (taskCode, subtaskCode, fundSourceId, kind, value) => {
+    const year = get().year;
+    const key = budgetKey(taskCode, subtaskCode, fundSourceId);
     set((state) => {
       const prev = state.budgets[key] ?? { budget: '', settlement: '' };
       return {
@@ -262,6 +369,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
         }
         await saveSpBudget({
           taskCode,
+          subtaskCode,
           year,
           fundSourceId,
           ...(kind === 'budget'

@@ -2,11 +2,16 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'fs';
+import { extname, join } from 'path';
 import { Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import {
   IrSpCompareData,
+  IrSpDepartment,
   IrSpEvaluation,
   IrSpFundSource,
   IrSpGoal,
@@ -22,8 +27,10 @@ import {
   type SpComparePayload,
 } from '../../entities';
 import {
+  CreateDepartmentDto,
   CreateFundSourceDto,
   ReplaceSubtasksDto,
+  UpdateDepartmentDto,
   UpdateFundSourceDto,
   UpdateGoalDto,
   UpdateKpiDto,
@@ -37,11 +44,39 @@ import {
   UpsertStrategyDto,
   UpsertTaskDto,
 } from './dto/strategic-plan.dto';
+import { sanitizeVisionHtml } from './sanitize-vision-html';
+import {
+  sanitizeIrEval,
+  sanitizeKpiPoEvals,
+  sanitizeSurveyItems,
+  sanitizeSurveyPlans,
+  sanitizeTaskActivities,
+} from './sanitize-evaluation';
 import {
   SP_DEPT_GRADES,
   SP_IR_GRADES,
+  SP_SURVEY_PLAN_GRADES,
   SP_YEARS,
 } from './strategic-plan.constants';
+
+const VISION_IMAGE_DIR = join(process.cwd(), 'uploads', 'sp-vision');
+const VISION_IMAGE_MIME: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
+const VISION_IMAGE_NAME_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:jpe?g|png|gif|webp)$/i;
+
+function mimeToExt(mime: string): string | null {
+  if (mime === 'image/jpeg') return '.jpg';
+  if (mime === 'image/png') return '.png';
+  if (mime === 'image/gif') return '.gif';
+  if (mime === 'image/webp') return '.webp';
+  return null;
+}
 
 export interface SpSubtaskNode {
   subtaskId: number;
@@ -101,7 +136,7 @@ export interface SpCompareIndicator {
 }
 
 @Injectable()
-export class StrategicPlanService {
+export class StrategicPlanService implements OnModuleInit {
   constructor(
     @InjectRepository(IrSpVision)
     private readonly visionRepo: Repository<IrSpVision>,
@@ -125,9 +160,39 @@ export class StrategicPlanService {
     private readonly compareRepo: Repository<IrSpCompareData>,
     @InjectRepository(IrSpFundSource)
     private readonly fundSourceRepo: Repository<IrSpFundSource>,
+    @InjectRepository(IrSpDepartment)
+    private readonly departmentRepo: Repository<IrSpDepartment>,
     @InjectRepository(IrSpTaskBudget)
     private readonly budgetRepo: Repository<IrSpTaskBudget>,
   ) {}
+
+  async onModuleInit() {
+    try {
+      await this.budgetRepo.query(`
+        DO $$
+        DECLARE r RECORD;
+        BEGIN
+          IF to_regclass('ir_sp_task_budget') IS NULL THEN
+            RETURN;
+          END IF;
+          FOR r IN
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'ir_sp_task_budget'::regclass
+              AND contype = 'u'
+              AND conname <> 'uq_sp_subtask_budget'
+          LOOP
+            EXECUTE format(
+              'ALTER TABLE ir_sp_task_budget DROP CONSTRAINT %I',
+              r.conname
+            );
+          END LOOP;
+        END $$;
+      `);
+    } catch {
+      // 최초 기동 등 테이블이 아직 없으면 synchronize가 생성한다.
+    }
+  }
 
   /* ── 대시보드 조회 ── */
 
@@ -228,21 +293,9 @@ export class StrategicPlanService {
       scales: {
         deptGrades: [...SP_DEPT_GRADES],
         irGrades: [...SP_IR_GRADES],
+        surveyPlanGrades: [...SP_SURVEY_PLAN_GRADES],
       },
-      vision: v
-        ? {
-            officialName: v.officialName,
-            planPeriod: v.planPeriod,
-            structureSummary: v.structureSummary,
-            visionStatement: v.visionStatement,
-            visionGoal: v.visionGoal,
-            mission: v.mission,
-            keyIndicators: v.keyIndicators ?? [],
-            foundingPhilosophy: v.foundingPhilosophy ?? [],
-            mottoPairs: v.mottoPairs ?? [],
-            talent3c: v.talent3c,
-          }
-        : null,
+      vision: v ? this.toVisionJson(v) : null,
       goals: goalNodes,
       tasks: taskNodes,
       kpis: kpiNodes,
@@ -291,6 +344,13 @@ export class StrategicPlanService {
     });
   }
 
+  async listDepartments() {
+    await this.ensureDepartmentsFromTasks();
+    return this.departmentRepo.find({
+      order: { displayOrder: 'ASC', deptId: 'ASC' },
+    });
+  }
+
   listEvaluations(year: number) {
     return this.evaluationRepo.find({ where: { year } });
   }
@@ -306,6 +366,9 @@ export class StrategicPlanService {
     this.assertGrade(dto.deptGrade, SP_DEPT_GRADES, '부서 자체점검');
     this.assertGrade(dto.irGrade, SP_IR_GRADES, 'IR센터 평가');
     this.assertGrade(dto.surveyGrade, SP_DEPT_GRADES, '만족도조사 자체점검');
+    this.assertGrade(dto.budgetAdequacyGrade, SP_DEPT_GRADES, '예결산의 적절성');
+    this.assertGrade(dto.processAdequacyGrade, SP_DEPT_GRADES, '절차상 적절성');
+    this.assertGrade(dto.kpiAdequacyGrade, SP_DEPT_GRADES, '성과지표 적절성');
 
     const existing = await this.evaluationRepo.findOne({
       where: { taskCode: dto.taskCode, year: dto.year },
@@ -326,10 +389,31 @@ export class StrategicPlanService {
       'surveyGrade',
       'surveyAnalysis',
       'surveyFeedback',
+      'budgetAdequacy',
+      'budgetAdequacyGrade',
+      'processAdequacy',
+      'processAdequacyGrade',
+      'kpiAdequacy',
+      'kpiAdequacyGrade',
     ] as const) {
       if (dto[key] !== undefined) {
         row[key] = this.emptyToNull(dto[key]);
       }
+    }
+    if (dto.taskActivities !== undefined) {
+      row.taskActivities = sanitizeTaskActivities(dto.taskActivities);
+    }
+    if (dto.kpiPoEvals !== undefined) {
+      row.kpiPoEvals = sanitizeKpiPoEvals(dto.kpiPoEvals);
+    }
+    if (dto.surveyItems !== undefined) {
+      row.surveyItems = sanitizeSurveyItems(dto.surveyItems);
+    }
+    if (dto.surveyPlans !== undefined) {
+      row.surveyPlans = sanitizeSurveyPlans(dto.surveyPlans);
+    }
+    if (dto.irEval !== undefined) {
+      row.irEval = sanitizeIrEval(dto.irEval);
     }
     return this.evaluationRepo.save(row);
   }
@@ -337,7 +421,7 @@ export class StrategicPlanService {
   /* ── 예산·결산 (로그인 사용자 전원) ── */
 
   async upsertBudget(dto: UpsertBudgetDto, userId: string) {
-    await this.assertTaskExists(dto.taskCode);
+    await this.assertBudgetUnit(dto.taskCode, dto.subtaskCode);
     const fund = await this.fundSourceRepo.findOne({
       where: { fundSourceId: dto.fundSourceId },
     });
@@ -353,6 +437,7 @@ export class StrategicPlanService {
     const existing = await this.budgetRepo.findOne({
       where: {
         taskCode: dto.taskCode,
+        subtaskCode: dto.subtaskCode,
         year: dto.year,
         fundSourceId: dto.fundSourceId,
       },
@@ -360,6 +445,7 @@ export class StrategicPlanService {
     const row = this.budgetRepo.create({
       ...existing,
       taskCode: dto.taskCode,
+      subtaskCode: dto.subtaskCode,
       year: dto.year,
       fundSourceId: dto.fundSourceId,
       updatedBy: userId,
@@ -380,6 +466,7 @@ export class StrategicPlanService {
       await this.budgetRepo.delete(existing.budgetId);
       return {
         taskCode: dto.taskCode,
+        subtaskCode: dto.subtaskCode,
         year: dto.year,
         fundSourceId: dto.fundSourceId,
         budgetAmount: null,
@@ -497,8 +584,11 @@ export class StrategicPlanService {
         strategyId: dto.strategyId,
         goalId: strategy.goalId,
         isSpecialized: dto.isSpecialized ?? false,
-        primaryDept: dto.primaryDept ?? null,
-        relatedDepts: dto.relatedDepts ?? [],
+        primaryDept: this.emptyToNull(dto.primaryDept ?? null),
+        relatedDepts: await this.normalizeTaskDepts(
+          dto.primaryDept,
+          dto.relatedDepts ?? [],
+        ),
         displayOrder: dto.displayOrder ?? 0,
       }),
     );
@@ -523,11 +613,17 @@ export class StrategicPlanService {
     }
     if (dto.taskName !== undefined) task.taskName = dto.taskName;
     if (dto.isSpecialized !== undefined) task.isSpecialized = dto.isSpecialized;
-    if (dto.primaryDept !== undefined) {
-      task.primaryDept = this.emptyToNull(dto.primaryDept);
-    }
-    if (dto.relatedDepts !== undefined) {
-      task.relatedDepts = dto.relatedDepts.filter((d) => d.trim() !== '');
+    if (dto.primaryDept !== undefined || dto.relatedDepts !== undefined) {
+      const primary =
+        dto.primaryDept !== undefined
+          ? this.emptyToNull(dto.primaryDept)
+          : task.primaryDept;
+      const related =
+        dto.relatedDepts !== undefined
+          ? dto.relatedDepts
+          : (task.relatedDepts ?? []);
+      task.primaryDept = primary;
+      task.relatedDepts = await this.normalizeTaskDepts(primary, related);
     }
     if (dto.displayOrder !== undefined) task.displayOrder = dto.displayOrder;
     return this.taskRepo.save(task);
@@ -559,6 +655,14 @@ export class StrategicPlanService {
       seen.add(s.subtaskCode);
     }
     await this.subtaskRepo.delete({ taskCode });
+    const kept = new Set(dto.subtasks.map((s) => s.subtaskCode));
+    const budgets = await this.budgetRepo.find({ where: { taskCode } });
+    const staleIds = budgets
+      .filter((b) => b.subtaskCode && !kept.has(b.subtaskCode))
+      .map((b) => b.budgetId);
+    if (staleIds.length > 0) {
+      await this.budgetRepo.delete(staleIds);
+    }
     if (dto.subtasks.length === 0) return [];
     return this.subtaskRepo.save(
       dto.subtasks.map((s, index) =>
@@ -733,6 +837,56 @@ export class StrategicPlanService {
     return { ok: true as const, deactivated: false, used: 0 };
   }
 
+  /* ── 관리자: 부서 ── */
+
+  async createDepartment(dto: CreateDepartmentDto) {
+    const name = dto.deptName.trim();
+    if (!name) throw new BadRequestException('부서명을 입력해 주세요.');
+    const dup = await this.departmentRepo.findOne({
+      where: { deptName: name },
+    });
+    if (dup) throw new BadRequestException('같은 이름의 부서가 이미 있습니다.');
+    const max = await this.departmentRepo
+      .createQueryBuilder('d')
+      .select('MAX(d.displayOrder)', 'max')
+      .getRawOne<{ max: number | null }>();
+    return this.departmentRepo.save(
+      this.departmentRepo.create({
+        deptName: name,
+        displayOrder: dto.displayOrder ?? (max?.max ?? -1) + 1,
+      }),
+    );
+  }
+
+  async updateDepartment(deptId: number, dto: UpdateDepartmentDto) {
+    const dept = await this.departmentRepo.findOne({ where: { deptId } });
+    if (!dept) throw new NotFoundException('부서를 찾을 수 없습니다.');
+    if (dto.deptName !== undefined) {
+      const name = dto.deptName.trim();
+      if (!name) throw new BadRequestException('부서명을 입력해 주세요.');
+      const dup = await this.departmentRepo.findOne({
+        where: { deptName: name },
+      });
+      if (dup && dup.deptId !== deptId) {
+        throw new BadRequestException('같은 이름의 부서가 이미 있습니다.');
+      }
+      if (name !== dept.deptName) {
+        await this.rewriteDeptOnTasks(dept.deptName, name);
+        dept.deptName = name;
+      }
+    }
+    if (dto.displayOrder !== undefined) dept.displayOrder = dto.displayOrder;
+    return this.departmentRepo.save(dept);
+  }
+
+  async deleteDepartment(deptId: number) {
+    const dept = await this.departmentRepo.findOne({ where: { deptId } });
+    if (!dept) throw new NotFoundException('부서를 찾을 수 없습니다.');
+    await this.rewriteDeptOnTasks(dept.deptName, null);
+    await this.departmentRepo.delete(deptId);
+    return { ok: true as const };
+  }
+
   /* ── 관리자: 비전·비교 ── */
 
   async updateVision(dto: UpdateVisionDto) {
@@ -771,7 +925,62 @@ export class StrategicPlanService {
           }
         : null;
     }
-    return this.visionRepo.save(vision);
+    if (dto.contentHtml !== undefined) {
+      const cleaned = sanitizeVisionHtml(dto.contentHtml ?? '');
+      vision.contentHtml = cleaned.trim() ? cleaned : null;
+    }
+    const saved = await this.visionRepo.save(vision);
+    return this.toVisionJson(saved);
+  }
+
+  saveVisionImage(file: Express.Multer.File) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('업로드된 파일이 없습니다.');
+    }
+    const ext = VISION_IMAGE_MIME[extname(file.originalname).toLowerCase()]
+      ? extname(file.originalname).toLowerCase()
+      : mimeToExt(file.mimetype);
+    if (!ext) {
+      throw new BadRequestException(
+        'jpeg, png, gif, webp 이미지만 올릴 수 있습니다.',
+      );
+    }
+    mkdirSync(VISION_IMAGE_DIR, { recursive: true });
+    const filename = `${randomUUID()}${ext}`;
+    writeFileSync(join(VISION_IMAGE_DIR, filename), file.buffer);
+    return {
+      filename,
+      url: `/strategic-plan/vision/images/${filename}`,
+    };
+  }
+
+  getVisionImage(filename: string) {
+    if (!VISION_IMAGE_NAME_RE.test(filename)) {
+      throw new BadRequestException('잘못된 파일 이름입니다.');
+    }
+    const filePath = join(VISION_IMAGE_DIR, filename);
+    if (!existsSync(filePath)) {
+      throw new NotFoundException('이미지를 찾을 수 없습니다.');
+    }
+    const contentType =
+      VISION_IMAGE_MIME[extname(filename).toLowerCase()] ?? 'application/octet-stream';
+    return { stream: createReadStream(filePath), contentType };
+  }
+
+  private toVisionJson(v: IrSpVision) {
+    return {
+      officialName: v.officialName,
+      planPeriod: v.planPeriod,
+      structureSummary: v.structureSummary,
+      visionStatement: v.visionStatement,
+      visionGoal: v.visionGoal,
+      mission: v.mission,
+      keyIndicators: v.keyIndicators ?? [],
+      foundingPhilosophy: v.foundingPhilosophy ?? [],
+      mottoPairs: v.mottoPairs ?? [],
+      talent3c: v.talent3c,
+      contentHtml: v.contentHtml ?? null,
+    };
   }
 
   async replaceCompare(payload: {
@@ -848,8 +1057,108 @@ export class StrategicPlanService {
     if (!exists) throw new NotFoundException('실행과제를 찾을 수 없습니다.');
   }
 
+  private async assertBudgetUnit(taskCode: string, subtaskCode: string) {
+    await this.assertTaskExists(taskCode);
+    const subCount = await this.subtaskRepo.count({ where: { taskCode } });
+    if (subCount === 0) {
+      if (subtaskCode !== taskCode) {
+        throw new NotFoundException('TASK를 찾을 수 없습니다.');
+      }
+      return;
+    }
+    const sub = await this.subtaskRepo.findOne({
+      where: { taskCode, subtaskCode },
+    });
+    if (!sub) throw new NotFoundException('TASK를 찾을 수 없습니다.');
+  }
+
   private async assertKpiExists(kpiCode: string) {
     const exists = await this.kpiRepo.count({ where: { kpiCode } });
     if (!exists) throw new NotFoundException('KPI를 찾을 수 없습니다.');
+  }
+
+  private collectTaskDeptNames(tasks: IrSpTask[]): string[] {
+    const names = new Set<string>();
+    for (const task of tasks) {
+      const primary = task.primaryDept?.trim();
+      if (primary) names.add(primary);
+      for (const related of task.relatedDepts ?? []) {
+        const name = related.trim();
+        if (name) names.add(name);
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, 'ko'));
+  }
+
+  /** 실행과제에 남은 텍스트 부서명을 마스터에 넣어 드롭다운이 비지 않게 한다. */
+  private async ensureDepartmentsFromTasks() {
+    const [tasks, existing] = await Promise.all([
+      this.taskRepo.find(),
+      this.departmentRepo.find(),
+    ]);
+    const have = new Set(existing.map((d) => d.deptName));
+    const missing = this.collectTaskDeptNames(tasks).filter(
+      (name) => !have.has(name),
+    );
+    if (missing.length === 0) return;
+    const maxOrder = existing.reduce((m, d) => Math.max(m, d.displayOrder), -1);
+    await this.departmentRepo.save(
+      missing.map((deptName, i) =>
+        this.departmentRepo.create({
+          deptName,
+          displayOrder: maxOrder + 1 + i,
+        }),
+      ),
+    );
+  }
+
+  private async rewriteDeptOnTasks(
+    oldName: string,
+    newName: string | null,
+  ) {
+    const tasks = await this.taskRepo.find();
+    const changed: IrSpTask[] = [];
+    for (const task of tasks) {
+      let dirty = false;
+      if (task.primaryDept === oldName) {
+        task.primaryDept = newName;
+        dirty = true;
+      }
+      const related = task.relatedDepts ?? [];
+      if (related.includes(oldName)) {
+        const next = newName
+          ? related.map((d) => (d === oldName ? newName : d))
+          : related.filter((d) => d !== oldName);
+        task.relatedDepts = [...new Set(next.filter((d) => d.trim() !== ''))];
+        dirty = true;
+      }
+      if (dirty) changed.push(task);
+    }
+    if (changed.length > 0) await this.taskRepo.save(changed);
+  }
+
+  private async normalizeTaskDepts(
+    primaryDept: string | null | undefined,
+    relatedDepts: string[],
+  ) {
+    const primary = this.emptyToNull(primaryDept ?? null);
+    const related = [
+      ...new Set(
+        relatedDepts
+          .map((d) => d.trim())
+          .filter((d) => d !== '' && d !== primary),
+      ),
+    ];
+    const names = primary ? [primary, ...related] : related;
+    if (names.length === 0) return related;
+    const found = await this.departmentRepo.find();
+    const known = new Set(found.map((d) => d.deptName));
+    const unknown = names.filter((n) => !known.has(n));
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `등록되지 않은 부서입니다: ${unknown.join(', ')}. 부서관리에서 먼저 추가해 주세요.`,
+      );
+    }
+    return related;
   }
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import { cn } from '@/lib/utils';
 
 export function MonitoringYearSelector({
@@ -13,35 +14,30 @@ export function MonitoringYearSelector({
   onChange: (year: number) => void;
   id?: string;
 }) {
+  const generatedId = useId();
+  const selectId = id ?? generatedId;
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <label htmlFor={selectId} className="flex items-center gap-2">
       <span className="text-sm font-bold text-muted-foreground">조회 년도</span>
-      <div
-        id={id}
-        role="group"
+      <select
+        id={selectId}
         aria-label="조회 년도"
-        className="flex flex-wrap gap-1"
+        value={String(value)}
+        disabled={years.length === 0}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className={cn(
+          'h-9 min-w-[6.5rem] rounded-md border border-input bg-background px-2 text-sm font-bold',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+        )}
       >
-        {years.map((year) => {
-          const selected = year === value;
-          return (
-            <button
-              key={year}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => onChange(year)}
-              className={cn(
-                'rounded-md px-2.5 py-1 text-xs font-bold transition-colors',
-                selected
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-              )}
-            >
-              {year}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+        {years.map((year) => (
+          <option key={year} value={String(year)}>
+            {year}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

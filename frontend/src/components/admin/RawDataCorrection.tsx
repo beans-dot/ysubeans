@@ -20,14 +20,22 @@ import {
   fetchRawCorrectionYears,
   patchRawCorrectionValue,
   type RawCorrectionItem,
+  type RawCorrectionSourceType,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 const PAGE_SIZE = 100;
+
+function sourceLabel(sourceType: RawCorrectionSourceType) {
+  return sourceType === 'MONITORING'
+    ? '대학주요모니터링 데이터'
+    : '대학 자체 데이터';
+}
 
 function apiErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
@@ -41,7 +49,12 @@ function apiErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export function RawDataCorrection() {
+function RawDataCorrectionPane({
+  sourceType,
+}: {
+  sourceType: RawCorrectionSourceType;
+}) {
+  const label = sourceLabel(sourceType);
   const [years, setYears] = useState<number[]>([]);
   const [year, setYear] = useState<string>('');
   const [univCode, setUnivCode] = useState('');
@@ -59,7 +72,7 @@ export function RawDataCorrection() {
   const gridApiRef = useRef<GridApi<RawCorrectionItem> | null>(null);
 
   useEffect(() => {
-    fetchRawCorrectionYears()
+    fetchRawCorrectionYears(sourceType)
       .then((list) => {
         setYears(list);
         if (list.length > 0) {
@@ -72,7 +85,7 @@ export function RawDataCorrection() {
         setYears([]);
         setYear(String(new Date().getFullYear()));
       });
-  }, []);
+  }, [sourceType]);
 
   const load = useCallback(
     async (nextPage = 1) => {
@@ -87,6 +100,7 @@ export function RawDataCorrection() {
       try {
         const data = await fetchRawCorrectionList({
           year: parsedYear,
+          sourceType,
           univCode: univCode.trim() || undefined,
           deptCode: deptCode.trim() || undefined,
           q: q.trim() || undefined,
@@ -105,12 +119,12 @@ export function RawDataCorrection() {
         setRows([]);
         setTotal(0);
         setSelectedCount(0);
-        setError(apiErrorMessage(err, '자체 데이터 조회에 실패했습니다.'));
+        setError(apiErrorMessage(err, `${label} 조회에 실패했습니다.`));
       } finally {
         setLoading(false);
       }
     },
-    [year, univCode, deptCode, q],
+    [year, sourceType, univCode, deptCode, q, label],
   );
 
   useEffect(() => {
@@ -118,7 +132,7 @@ export function RawDataCorrection() {
     void load(1);
     // 초기 연도 로드 시에만 자동 조회
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year]);
+  }, [year, sourceType]);
 
   const columnDefs = useMemo<ColDef<RawCorrectionItem>[]>(
     () => [
@@ -131,13 +145,25 @@ export function RawDataCorrection() {
       {
         field: 'univCode',
         headerName: '대학코드',
-        width: 120,
+        width: 110,
+        editable: false,
+      },
+      {
+        field: 'univName',
+        headerName: '대학명',
+        width: 160,
         editable: false,
       },
       {
         field: 'deptCode',
         headerName: '학과코드',
-        width: 120,
+        width: 110,
+        editable: false,
+      },
+      {
+        field: 'deptName',
+        headerName: '학과명',
+        width: 180,
         editable: false,
       },
       {
@@ -262,23 +288,12 @@ export function RawDataCorrection() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        <p className="font-semibold">
-          [안내] 대학 자체 데이터만 수정·삭제 가능합니다.
-        </p>
-        <p className="mt-1 text-amber-900/90">
-          정보공시 API를 통해 연동된 데이터는 원본 데이터의 정확성 유지를 위해
-          조회 및 수정이 제한됩니다. 수정이 필요한 대학 자체 데이터를 검색 후
-          진행해 주십시오.
-        </p>
-      </div>
-
       <div className="grid gap-3 md:grid-cols-5">
         <div className="space-y-1">
-          <Label htmlFor="rc-year">연도</Label>
+          <Label htmlFor={`rc-year-${sourceType}`}>연도</Label>
           {years.length > 0 ? (
             <select
-              id="rc-year"
+              id={`rc-year-${sourceType}`}
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={year}
               onChange={(e) => setYear(e.target.value)}
@@ -291,7 +306,7 @@ export function RawDataCorrection() {
             </select>
           ) : (
             <Input
-              id="rc-year"
+              id={`rc-year-${sourceType}`}
               value={year}
               onChange={(e) => setYear(e.target.value)}
               placeholder="예: 2025"
@@ -299,28 +314,28 @@ export function RawDataCorrection() {
           )}
         </div>
         <div className="space-y-1">
-          <Label htmlFor="rc-univ">대학코드</Label>
+          <Label htmlFor={`rc-univ-${sourceType}`}>대학코드</Label>
           <Input
-            id="rc-univ"
+            id={`rc-univ-${sourceType}`}
             value={univCode}
             onChange={(e) => setUnivCode(e.target.value)}
             placeholder="선택"
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="rc-dept">학과코드</Label>
+          <Label htmlFor={`rc-dept-${sourceType}`}>학과코드</Label>
           <Input
-            id="rc-dept"
+            id={`rc-dept-${sourceType}`}
             value={deptCode}
             onChange={(e) => setDeptCode(e.target.value)}
             placeholder="선택 (_ALL_)"
           />
         </div>
         <div className="space-y-1 md:col-span-2">
-          <Label htmlFor="rc-q">지표명 검색</Label>
+          <Label htmlFor={`rc-q-${sourceType}`}>지표명 검색</Label>
           <div className="flex gap-2">
             <Input
-              id="rc-q"
+              id={`rc-q-${sourceType}`}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="지표명 일부"
@@ -376,7 +391,7 @@ export function RawDataCorrection() {
           overlayNoRowsTemplate={
             loading
               ? '조회 중…'
-              : '조건에 맞는 대학 자체 데이터가 없습니다.'
+              : `조건에 맞는 ${label}가 없습니다.`
           }
         />
       </div>
@@ -402,6 +417,36 @@ export function RawDataCorrection() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function RawDataCorrection() {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <p className="font-semibold">
+          [안내] 대학자체데이터와 대학주요모니터링 데이터를 수정·삭제할 수 있습니다.
+        </p>
+        <p className="mt-1 text-amber-900/90">
+          정보공시 API를 통해 연동된 데이터는 원본 데이터의 정확성 유지를 위해
+          조회 및 수정이 제한됩니다. 구분 탭에서 대상을 선택한 뒤 검색·수정해
+          주십시오.
+        </p>
+      </div>
+
+      <Tabs defaultValue="INTERNAL">
+        <TabsList>
+          <TabsTrigger value="INTERNAL">대학자체데이터</TabsTrigger>
+          <TabsTrigger value="MONITORING">대학주요모니터링</TabsTrigger>
+        </TabsList>
+        <TabsContent value="INTERNAL">
+          <RawDataCorrectionPane sourceType="INTERNAL" />
+        </TabsContent>
+        <TabsContent value="MONITORING">
+          <RawDataCorrectionPane sourceType="MONITORING" />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

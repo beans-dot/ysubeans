@@ -17,3 +17,6 @@
 # logs & misc
 *.log
 .DS_Store
+
+# 비전 체계 첨부 이미지
+**/uploads

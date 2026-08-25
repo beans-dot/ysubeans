@@ -5,9 +5,7 @@ import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { goalAccent } from '@/lib/strategic-plan/goalAccent';
 import type { SpGoal } from '@/lib/strategic-plan/types';
-import { cn } from '@/lib/utils';
 import { useStrategicPlanStore } from '@/store/useStrategicPlanStore';
 import { NativeSelect } from './ui';
 
@@ -42,60 +40,27 @@ export function PlanFilters({
   const hasFilter = Boolean(goalId || dept || query || specializedOnly);
 
   return (
-    <div className="mb-4 rounded-md border bg-muted/20 p-3">
-      <div className="mb-2 flex flex-wrap gap-1.5">
-        <button
-          type="button"
-          onClick={() => setGoalId('')}
-          aria-pressed={goalId === ''}
-          className={cn(
-            'rounded-full border px-3 py-1 font-bold transition-colors',
-            goalId === ''
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'hover:bg-accent',
-          )}
-        >
-          전체
-        </button>
-        {goals.map((goal) => {
-          const accent = goalAccent(goal.goalId);
-          const active = goalId === goal.goalId;
-          return (
-            <button
-              key={goal.goalId}
-              type="button"
-              onClick={() => setGoalId(active ? '' : goal.goalId)}
-              aria-pressed={active}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full border px-3 py-1 font-bold transition-colors',
-                active
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'hover:bg-accent',
-              )}
-            >
-              <span
-                className={cn('h-2 w-2 shrink-0 rounded-full', accent.dot)}
-              />
-              {goal.goalId}. {goal.goalName}
-            </button>
-          );
-        })}
-      </div>
-
+    <div className="mb-4 space-y-2 rounded-md border bg-muted/20 p-3">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={specializedOnly}
-            onCheckedChange={setSpecializedOnly}
-            aria-label="특성화 연계 과제만 보기"
-          />
-          특성화 연계만
-        </label>
+        <NativeSelect
+          value={goalId}
+          onChange={(e) => setGoalId(e.target.value)}
+          aria-label="발전전략"
+          className="min-w-[14rem] max-w-full flex-1 sm:flex-none sm:min-w-[18rem]"
+        >
+          <option value="">전체</option>
+          {goals.map((goal) => (
+            <option key={goal.goalId} value={goal.goalId}>
+              {goal.goalId}. {goal.goalName}
+            </option>
+          ))}
+        </NativeSelect>
 
         <NativeSelect
           value={dept}
           onChange={(e) => setDept(e.target.value)}
           aria-label="책임부서"
+          className="min-w-[10rem] max-w-full"
         >
           <option value="">모든 책임부서</option>
           {depts.map((d) => (
@@ -105,6 +70,17 @@ export function PlanFilters({
           ))}
         </NativeSelect>
 
+        <label className="flex shrink-0 items-center gap-2 text-sm">
+          <Switch
+            checked={specializedOnly}
+            onCheckedChange={setSpecializedOnly}
+            aria-label="특성화 연계 과제만 보기"
+          />
+          특성화 연계
+        </label>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[200px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input

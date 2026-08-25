@@ -115,11 +115,23 @@ export interface PivotResult {
   rows: PivotRow[];
 }
 
+export interface UpdateLogMetricDetail {
+  metricName: string;
+  isNew: boolean;
+  sampleDept: string | null;
+  deptCount: number;
+}
+
+export interface UpdateLogDetail {
+  metrics: UpdateLogMetricDetail[];
+}
+
 export interface UpdateLog {
   logId: number;
   updateDate: string;
   updateType: string;
   logText: string;
+  detail?: UpdateLogDetail | null;
 }
 
 /** YSU = [연성대학교], EXTERNAL = [대학 외] */
@@ -214,7 +226,9 @@ export interface RawCorrectionItem {
   rawId: number;
   year: number;
   univCode: string;
+  univName: string;
   deptCode: string;
+  deptName: string;
   metricId: number;
   metricName: string;
   metricValue: string;
@@ -226,8 +240,14 @@ export interface RawCorrectionListResult {
   items: RawCorrectionItem[];
 }
 
+export type RawCorrectionSourceType = Extract<
+  MetricSourceType,
+  'INTERNAL' | 'MONITORING'
+>;
+
 export type RawCorrectionListParams = {
   year: number;
+  sourceType?: RawCorrectionSourceType;
   univCode?: string;
   deptCode?: string;
   q?: string;
@@ -235,8 +255,12 @@ export type RawCorrectionListParams = {
   pageSize?: number;
 };
 
-export async function fetchRawCorrectionYears() {
-  const { data } = await api.get<number[]>('/raw-correction/years');
+export async function fetchRawCorrectionYears(
+  sourceType: RawCorrectionSourceType = 'INTERNAL',
+) {
+  const { data } = await api.get<number[]>('/raw-correction/years', {
+    params: { sourceType },
+  });
   return data;
 }
 
@@ -251,6 +275,7 @@ export async function fetchRawCorrectionList(params: RawCorrectionListParams) {
   const { data } = await api.get<RawCorrectionListResult>('/raw-correction', {
     params: {
       year: params.year,
+      sourceType: params.sourceType ?? 'INTERNAL',
       univCode: params.univCode || undefined,
       deptCode: params.deptCode || undefined,
       q: params.q || undefined,

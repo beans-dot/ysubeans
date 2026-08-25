@@ -59,7 +59,7 @@ module.exports = {
           foreground: 'hsl(var(--card-foreground))',
         },
         ysu: {
-          DEFAULT: '#50b1d1',
+          DEFAULT: '#4aa5c4',
           dark: '#0F766E',
         },
       },

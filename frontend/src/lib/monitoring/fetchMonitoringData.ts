@@ -35,7 +35,7 @@ import { computeYoy, trendYearWindow } from './yoy';
 export interface MonitoringBundle {
   /** 피벗에 요청한 전체 연도 (추이 창 포함) */
   years: number[];
-  /** DB에 모니터링 값이 있는 연도 (조회 년도 버튼) */
+  /** DB에 모니터링 값이 있는 연도 (조회 년도 드롭다운) */
   availableYears: number[];
   org: OrgStructure;
   /** 시드 카테고리 코드 → 현재 카테고리명 (지표 DB 빌더에서 바꾼 이름) */

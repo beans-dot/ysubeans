@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Plus, Save, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import {
   deleteSpGoal,
   deleteSpStrategy,
   deleteSpTask,
+  fetchSpDepartments,
   replaceSpSubtasks,
   updateSpGoal,
   updateSpStrategy,
@@ -23,7 +24,7 @@ import {
 } from '@/lib/strategic-plan/api';
 import { apiMessage } from '@/lib/strategic-plan/apiError';
 import { goalAccent } from '@/lib/strategic-plan/goalAccent';
-import type { SpGoal, SpStrategy, SpTask, SpTree } from '@/lib/strategic-plan/types';
+import type { SpDepartment, SpGoal, SpStrategy, SpTask, SpTree } from '@/lib/strategic-plan/types';
 import { cn } from '@/lib/utils';
 
 interface SubtaskDraft {
@@ -34,12 +35,14 @@ interface SubtaskDraft {
 function TaskEditor({
   task,
   strategies,
+  departments,
   busy,
   setBusy,
   reload,
 }: {
   task: SpTask;
   strategies: SpStrategy[];
+  departments: SpDepartment[];
   busy: boolean;
   setBusy: (v: boolean) => void;
   reload: () => Promise<void>;
@@ -49,9 +52,7 @@ function TaskEditor({
   const [strategyId, setStrategyId] = useState(task.strategyId);
   const [isSpecialized, setIsSpecialized] = useState(task.isSpecialized);
   const [primaryDept, setPrimaryDept] = useState(task.primaryDept ?? '');
-  const [relatedDepts, setRelatedDepts] = useState(
-    task.relatedDepts.join(', '),
-  );
+  const [relatedDepts, setRelatedDepts] = useState<string[]>(task.relatedDepts);
   const [subtasks, setSubtasks] = useState<SubtaskDraft[]>(
     task.subtasks.map((s) => ({
       subtaskCode: s.subtaskCode,
@@ -67,10 +68,7 @@ function TaskEditor({
         strategyId,
         isSpecialized,
         primaryDept: primaryDept.trim(),
-        relatedDepts: relatedDepts
-          .split(',')
-          .map((d) => d.trim())
-          .filter(Boolean),
+        relatedDepts: relatedDepts.filter((d) => d !== primaryDept.trim()),
       });
       await replaceSpSubtasks(
         task.taskCode,
@@ -172,23 +170,68 @@ function TaskEditor({
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor={`tp-${task.taskCode}`}>책임부서</Label>
-              <Input
+              <NativeSelect
                 id={`tp-${task.taskCode}`}
                 value={primaryDept}
-                onChange={(e) => setPrimaryDept(e.target.value)}
-                className="h-9"
-              />
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setPrimaryDept(next);
+                  setRelatedDepts((prev) => prev.filter((d) => d !== next));
+                }}
+              >
+                <option value="">미지정</option>
+                {departments.map((d) => (
+                  <option key={d.deptId} value={d.deptName}>
+                    {d.deptName}
+                  </option>
+                ))}
+                {primaryDept &&
+                  !departments.some((d) => d.deptName === primaryDept) && (
+                    <option value={primaryDept}>
+                      {primaryDept} (목록에 없음)
+                    </option>
+                  )}
+              </NativeSelect>
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label htmlFor={`tr-${task.taskCode}`}>
-                연관부서 (쉼표로 구분)
-              </Label>
-              <Input
-                id={`tr-${task.taskCode}`}
-                value={relatedDepts}
-                onChange={(e) => setRelatedDepts(e.target.value)}
-                className="h-9"
-              />
+              <Label>연관부서</Label>
+              {departments.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  부서관리에서 부서를 먼저 등록해 주세요.
+                </p>
+              ) : (
+                <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {departments.map((d) => {
+                    const isPrimary = d.deptName === primaryDept;
+                    return (
+                      <label
+                        key={d.deptId}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <Checkbox
+                          checked={relatedDepts.includes(d.deptName)}
+                          disabled={isPrimary}
+                          onCheckedChange={(v) => {
+                            setRelatedDepts((prev) =>
+                              v === true
+                                ? [...prev, d.deptName]
+                                : prev.filter((name) => name !== d.deptName),
+                            );
+                          }}
+                        />
+                        <span
+                          className={
+                            isPrimary ? 'text-muted-foreground' : undefined
+                          }
+                        >
+                          {d.deptName}
+                          {isPrimary ? ' (책임부서)' : ''}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <label className="flex items-center gap-2 text-sm">
               <Checkbox
@@ -287,6 +330,7 @@ function StrategyBlock({
   strategy,
   allStrategies,
   goals,
+  departments,
   busy,
   setBusy,
   reload,
@@ -295,6 +339,7 @@ function StrategyBlock({
   strategy: SpStrategy;
   allStrategies: SpStrategy[];
   goals: SpGoal[];
+  departments: SpDepartment[];
   busy: boolean;
   setBusy: (v: boolean) => void;
   reload: () => Promise<void>;
@@ -413,6 +458,7 @@ function StrategyBlock({
             key={task.taskCode}
             task={task}
             strategies={allStrategies}
+            departments={departments}
             busy={busy}
             setBusy={setBusy}
             reload={reload}
@@ -454,6 +500,7 @@ export function PlanStructureManager({
   reload: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [departments, setDepartments] = useState<SpDepartment[]>([]);
   const [newGoalId, setNewGoalId] = useState('');
   const [newGoalName, setNewGoalName] = useState('');
   const [newStrategyBy, setNewStrategyBy] = useState<
@@ -461,6 +508,12 @@ export function PlanStructureManager({
   >({});
 
   const allStrategies = tree.goals.flatMap((g) => g.strategies);
+
+  useEffect(() => {
+    fetchSpDepartments()
+      .then(setDepartments)
+      .catch(() => setDepartments([]));
+  }, [tree]);
 
   const handleAddGoal = async () => {
     const goalId = newGoalId.trim().toUpperCase();
@@ -614,6 +667,7 @@ export function PlanStructureManager({
                     strategy={strategy}
                     allStrategies={allStrategies}
                     goals={tree.goals}
+                    departments={departments}
                     busy={busy}
                     setBusy={setBusy}
                     reload={reload}

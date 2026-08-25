@@ -22,4 +22,5 @@ export * from './ir-sp-kpi-result.entity';
 export * from './ir-sp-evaluation.entity';
 export * from './ir-sp-compare-data.entity';
 export * from './ir-sp-fund-source.entity';
+export * from './ir-sp-department.entity';
 export * from './ir-sp-task-budget.entity';

@@ -514,7 +514,7 @@ export function HybridChart() {
                         dy={14}
                         textAnchor="middle"
                         fontSize={12}
-                        fill={hasEvents ? '#50b1d1' : '#374151'}
+                        fill={hasEvents ? '#4aa5c4' : '#374151'}
                         textDecoration={hasEvents ? 'underline' : undefined}
                         fontWeight={hasEvents ? 700 : 400}
                       >

@@ -1,9 +1,18 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Copy, FileText } from 'lucide-react';
+import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { SpVision } from '@/lib/strategic-plan/types';
+import { useStrategicPlanStore } from '@/store/useStrategicPlanStore';
+import { VisionEditor } from './VisionEditor';
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 function visionPlainText(vision: SpVision): string {
   const blocks: string[] = [];
@@ -46,37 +55,65 @@ function visionPlainText(vision: SpVision): string {
   return blocks.join('\n\n');
 }
 
-export function VisionPanel({ vision }: { vision: SpVision }) {
-  const text = useMemo(() => visionPlainText(vision), [vision]);
-  const [copied, setCopied] = useState(false);
+function visionFallbackHtml(vision: SpVision | null): string {
+  if (!vision) return '';
+  const text = visionPlainText(vision);
+  if (!text) return '';
+  return text
+    .split('\n\n')
+    .map((block) => `<p>${escapeHtml(block).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
 
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
-    }
-  };
+function displayHtml(vision: SpVision | null): string {
+  const saved = vision?.contentHtml?.trim();
+  if (saved) return saved;
+  return visionFallbackHtml(vision);
+}
+
+export function VisionPanel({
+  vision,
+  canEdit,
+}: {
+  vision: SpVision | null;
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const patchVision = useStrategicPlanStore((s) => s.patchVision);
+  const html = displayHtml(vision);
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>
-          <Copy className="mr-1.5 h-4 w-4" />
-          {copied ? '복사됨' : '텍스트 복사'}
-        </Button>
-      </div>
-      <pre className="whitespace-pre-wrap break-words leading-7">
-        {text || '비전 체계 내용이 아직 없습니다. 관리자 화면에서 입력해 주세요.'}
-      </pre>
-      <div className="flex items-start gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
-        <FileText className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>
-          상세 해설 PDF는 추후 이 자리에서 내려받을 수 있게 할 예정입니다.
-        </span>
-      </div>
+    <div className="overflow-hidden rounded-md border bg-card">
+      {canEdit && !editing && (
+        <div className="flex justify-end border-b px-3 py-2">
+          <Button type="button" size="sm" onClick={() => setEditing(true)}>
+            <Pencil className="h-4 w-4" />
+            수정
+          </Button>
+        </div>
+      )}
+
+      {editing ? (
+        <VisionEditor
+          initialHtml={html}
+          onCancel={() => setEditing(false)}
+          onSaved={(next) => {
+            patchVision({ contentHtml: next });
+            setEditing(false);
+          }}
+        />
+      ) : html ? (
+        <div
+          className="sp-vision-doc px-4 py-5"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <p className="px-4 py-10 text-center text-muted-foreground">
+          {canEdit
+            ? '수정 버튼을 눌러 비전 체계를 작성해 주세요.'
+            : '비전 체계 내용이 아직 없습니다.'}
+        </p>
+      )}
     </div>
   );
 }

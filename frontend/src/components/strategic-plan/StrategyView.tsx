@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { fmt } from '@/lib/strategic-plan/format';
 import { goalAccent } from '@/lib/strategic-plan/goalAccent';
 import type { SpGoal, SpKpi, SpTask } from '@/lib/strategic-plan/types';
 import { cn } from '@/lib/utils';
+import { TaskHeading } from './TaskHeading';
 import { EmptyState, SectionLabel } from './ui';
 
 function TaskRow({
@@ -36,23 +36,7 @@ function TaskRow({
             open && 'rotate-90',
           )}
         />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold">{task.taskName}</span>
-          <span className="mt-1 flex flex-wrap items-center gap-1.5">
-            {task.primaryDept && (
-              <Badge variant="outline" className={accent.badge}>
-                {task.primaryDept}
-              </Badge>
-            )}
-            <Badge variant="outline">
-              {task.taskCode}
-            </Badge>
-            {task.isSpecialized && <Badge variant="secondary">특성화 연계</Badge>}
-            <Badge variant="outline">
-              KPI {task.kpiCodes.length} · TASK {task.subtasks.length}
-            </Badge>
-          </span>
-        </span>
+        <TaskHeading task={task} showKpiTaskCounts />
       </button>
 
       {open && (

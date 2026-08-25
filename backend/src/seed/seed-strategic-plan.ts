@@ -8,6 +8,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '../app.module';
 import {
   IrSpCompareData,
+  IrSpDepartment,
   IrSpFundSource,
   IrSpGoal,
   IrSpKpi,
@@ -111,6 +112,7 @@ async function seedStrategicPlan() {
             items: v['인재상_3C']['요소'] ?? [],
           }
         : null,
+      contentHtml: existingVision[0]?.contentHtml ?? null,
     });
     await visionRepo.save(visionRow);
 
@@ -149,6 +151,26 @@ async function seedStrategicPlan() {
         }),
       ),
     );
+
+    const deptNames = new Set<string>();
+    for (const t of plan.tasks) {
+      const primary = t['책임부서']?.trim();
+      if (primary) deptNames.add(primary);
+      for (const related of t['연관부서'] ?? []) {
+        const name = related?.trim();
+        if (name) deptNames.add(name);
+      }
+    }
+    const deptRepo = dataSource.getRepository(IrSpDepartment);
+    const sortedDepts = [...deptNames].sort((a, b) => a.localeCompare(b, 'ko'));
+    for (let i = 0; i < sortedDepts.length; i++) {
+      const deptName = sortedDepts[i];
+      const existing = await deptRepo.findOne({ where: { deptName } });
+      if (existing) continue;
+      await deptRepo.save(
+        deptRepo.create({ deptName, displayOrder: i }),
+      );
+    }
 
     // 세부과제는 실행과제 단위로 통째로 교체 (프로토타입 JSON이 원본)
     const subtaskRepo = dataSource.getRepository(IrSpSubtask);

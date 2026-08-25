@@ -8,9 +8,14 @@ import {
 } from 'typeorm';
 import { numericTransformer } from './numeric.transformer';
 
-/** 실행과제 × 연도 × 재원 단위 예산·결산 (단위: 원) */
+/** TASK(세부과제) × 연도 × 재원 단위 예산·결산 (단위: 원) */
 @Entity('ir_sp_task_budget')
-@Unique('uq_sp_task_budget', ['taskCode', 'year', 'fundSourceId'])
+@Unique('uq_sp_subtask_budget', [
+  'taskCode',
+  'subtaskCode',
+  'year',
+  'fundSourceId',
+])
 export class IrSpTaskBudget {
   @PrimaryGeneratedColumn({ name: 'budget_id' })
   budgetId: number;
@@ -18,6 +23,16 @@ export class IrSpTaskBudget {
   @Index()
   @Column({ name: 'task_code', type: 'varchar', length: 60 })
   taskCode: string;
+
+  /** 세부 TASK 코드. 세부과제가 없으면 실행과제 코드를 그대로 쓴다. */
+  @Index()
+  @Column({
+    name: 'subtask_code',
+    type: 'varchar',
+    length: 80,
+    default: '',
+  })
+  subtaskCode: string;
 
   @Column({ name: 'year', type: 'int' })
   year: number;
