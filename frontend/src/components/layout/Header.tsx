@@ -54,14 +54,14 @@ export function Header() {
       <div className="flex h-16 min-w-0 items-center gap-2 px-3 sm:gap-4 sm:px-6">
         <Link
           href={homeHref}
-          className="flex min-w-0 max-w-[40%] shrink items-center gap-2 sm:max-w-none sm:shrink-0 sm:gap-3"
+          className="flex min-w-0 max-w-[70%] shrink items-center gap-2 sm:max-w-none sm:shrink-0 sm:gap-3"
         >
-          <div className="relative h-8 w-[5.5rem] shrink-0 sm:h-9 sm:w-[6.15rem]">
+          <div className="relative h-12 w-[218px] shrink-0 sm:h-14 sm:w-[254px]">
             <Image
               src="/logo.png"
               alt="연성대학교"
               fill
-              sizes="(max-width: 640px) 88px, 99px"
+              sizes="(max-width: 640px) 218px, 254px"
               style={{ objectFit: 'contain' }}
               priority
             />

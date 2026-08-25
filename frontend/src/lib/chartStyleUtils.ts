@@ -1,7 +1,7 @@
 // [강제] Random Color 절대 금지. 배열 초과 시 Modulo 순환 참조.
 
 export const YEONSUNG_COLORS = [
-  '#1D4ED8',
+  '#50B1D1',
   '#0F766E',
   '#3B82F6',
   '#0369A1',

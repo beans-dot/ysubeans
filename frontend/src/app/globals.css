@@ -35,7 +35,7 @@
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 224 76% 48%;
+    --primary: 195 58% 57%;
     --primary-foreground: 0 0% 100%;
     --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
@@ -47,7 +47,7 @@
     --destructive-foreground: 0 0% 100%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 224 76% 48%;
+    --ring: 195 58% 57%;
     --radius: 0.5rem;
   }
 }
@@ -61,7 +61,18 @@
   }
   .sp-root :not(svg):not(path):not(circle):not(line):not(polyline):not(rect):not(ellipse) {
     font-family: 'S-Core Dream', sans-serif !important;
+  }
+  .sp-root :not(.sp-vision-doc):not(.sp-vision-doc *) {
     font-size: 14px !important;
+  }
+  .sp-vision-doc {
+    font-size: 14px;
+    line-height: 1.7;
+    word-break: break-word;
+  }
+  .sp-vision-doc img {
+    max-width: 100%;
+    height: auto;
   }
 }
 
@@ -72,8 +83,8 @@
   body {
     @apply bg-background font-sans text-foreground;
     font-family: 'S-Core Dream', sans-serif;
-    /* [강제] Body: Medium(500) */
-    font-weight: 500;
+    /* 본문: Dream Regular(400) */
+    font-weight: 400;
   }
   h1,
   h2,
@@ -82,7 +93,7 @@
   h5,
   h6,
   .font-emphasis {
-    /* [강제] Heading/강조: Bold(700) */
-    font-weight: 700;
+    /* 제목단·데이터 대분류: Dream Medium(500) */
+    font-weight: 500;
   }
 }

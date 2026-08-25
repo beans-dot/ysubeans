@@ -56,7 +56,7 @@ export function MonitoringTrendChart({
             type="monotone"
             dataKey="value"
             name={label}
-            stroke="#1D4ED8"
+            stroke="#50B1D1"
             strokeWidth={3}
             dot={{ r: 4 }}
             connectNulls={false}

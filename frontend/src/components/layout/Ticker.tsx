@@ -50,7 +50,7 @@ export function Ticker() {
       title="업데이트 이력 보기"
     >
       <Megaphone className="h-4 w-4 shrink-0 text-primary" />
-      <span className="shrink-0 whitespace-nowrap text-xs font-bold text-primary">
+      <span className="shrink-0 whitespace-nowrap text-xs font-bold text-[#ee238e]">
         최신 업데이트
       </span>
       {showBody && (

@@ -17,6 +17,13 @@ module.exports = {
         // [강제] S-Core Dream 전역 폰트
         sans: ['S-Core Dream', 'sans-serif'],
       },
+      // 제목/대분류용 유틸은 Medium, 본문은 Regular
+      fontWeight: {
+        normal: '400',
+        medium: '500',
+        semibold: '500',
+        bold: '500',
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -52,7 +59,7 @@ module.exports = {
           foreground: 'hsl(var(--card-foreground))',
         },
         ysu: {
-          DEFAULT: '#1D4ED8',
+          DEFAULT: '#50b1d1',
           dark: '#0F766E',
         },
       },

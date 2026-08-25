@@ -1,7 +1,7 @@
 import type { HighlightBand, MetricDirection } from './types';
 
 export const COMPARE_BAR_COLORS = {
-  series: '#1D4ED8',
+  series: '#50B1D1',
   /** 학과 기본색. 기존 teal-800(#0F766E)보다 밝되 형광은 피함 */
   dept: '#4DB6AC',
   top: '#90CAF9',
