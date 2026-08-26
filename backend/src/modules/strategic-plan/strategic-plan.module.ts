@@ -17,6 +17,7 @@ import {
   IrSpTaskBudget,
   IrSpVision,
 } from '../../entities';
+import { InternalOrgModule } from '../internal-org/internal-org.module';
 import { SpStructureService } from './sp-structure.service';
 import { StrategicPlanController } from './strategic-plan.controller';
 import { StrategicPlanService } from './strategic-plan.service';
@@ -40,6 +41,7 @@ import { StrategicPlanService } from './strategic-plan.service';
       IrSpItemVersion,
       IrSpChangeLog,
     ]),
+    InternalOrgModule,
   ],
   controllers: [StrategicPlanController],
   providers: [StrategicPlanService, SpStructureService],

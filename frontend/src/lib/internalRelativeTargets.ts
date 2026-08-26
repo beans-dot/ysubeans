@@ -91,6 +91,18 @@ export function collectAllDeptTargets(tree: TargetTreeNode[]): SelectedTarget[] 
   ) => {
     const univ = n.univCode ?? ancestorUniv;
     const isY = !!(n.isYeonsung || ancestorYeonsung);
+    if (n.periodDepts && univ) {
+      for (const d of n.periodDepts) {
+        out.push({
+          key: `${univ}::${d.deptCode}`,
+          label: d.deptName,
+          isYeonsung: isY,
+          mode: 'individual',
+          univCode: univ,
+          deptCode: d.deptCode,
+        });
+      }
+    }
     if (n.level === 'dept' && n.selectable && univ && n.deptCode) {
       out.push({
         key: `${univ}::${n.deptCode}`,
@@ -104,7 +116,9 @@ export function collectAllDeptTargets(tree: TargetTreeNode[]): SelectedTarget[] 
     n.children?.forEach((c) => walk(c, univ, isY));
   };
   tree.forEach((r) => walk(r));
-  return out;
+  const byKey = new Map<string, SelectedTarget>();
+  out.forEach((t) => byKey.set(t.key, t));
+  return Array.from(byKey.values());
 }
 
 /**

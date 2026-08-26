@@ -28,16 +28,24 @@ export function AffiliationFields({
   onDepartmentChange: (value: string) => void;
 }) {
   const majorGroups = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, Array<{ deptCode: string; deptName: string }>>();
     for (const m of options?.majors ?? []) {
       const list = map.get(m.seriesName) ?? [];
-      list.push(m.deptName);
+      list.push({ deptCode: m.deptCode, deptName: m.deptName });
       map.set(m.seriesName, list);
     }
     return Array.from(map.entries());
   }, [options]);
 
   const offices = options?.offices ?? [];
+  const majorValue =
+    options?.majors.find(
+      (m) => m.deptCode === department || m.deptName === department,
+    )?.deptCode ?? department;
+  const officeValue =
+    offices.find(
+      (o) => o.officeCode === department || o.deptName === department,
+    )?.officeCode ?? department;
   const majorsEmpty = !loading && (options?.majors.length ?? 0) === 0;
   const officesEmpty = !loading && offices.length === 0;
 
@@ -71,7 +79,7 @@ export function AffiliationFields({
           <select
             id={`${idPrefix}-major`}
             className={SELECT_CLASS}
-            value={department}
+            value={majorValue}
             required
             disabled={loading || majorsEmpty}
             onChange={(e) => onDepartmentChange(e.target.value)}
@@ -79,9 +87,9 @@ export function AffiliationFields({
             <option value="">학과를 선택하세요</option>
             {majorGroups.map(([series, depts]) => (
               <optgroup key={series} label={series}>
-                {depts.map((name) => (
-                  <option key={`${series}:${name}`} value={name}>
-                    {name}
+                {depts.map((dept) => (
+                  <option key={dept.deptCode} value={dept.deptCode}>
+                    {dept.deptName}
                   </option>
                 ))}
               </optgroup>
@@ -101,15 +109,17 @@ export function AffiliationFields({
           <select
             id={`${idPrefix}-office`}
             className={SELECT_CLASS}
-            value={department}
+            value={officeValue}
             required
             disabled={loading || officesEmpty}
             onChange={(e) => onDepartmentChange(e.target.value)}
           >
             <option value="">부서를 선택하세요</option>
             {offices.map((office) => (
-              <option key={office.deptName} value={office.deptName}>
-                {office.deptName}
+              <option key={office.officeCode} value={office.officeCode}>
+                {office.categoryName
+                  ? `${office.deptName} (${office.categoryName})`
+                  : office.deptName}
               </option>
             ))}
           </select>

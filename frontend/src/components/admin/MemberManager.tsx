@@ -13,7 +13,9 @@ import {
 } from '@/components/ui/dialog';
 import {
   api,
+  fetchAffiliationOptions,
   formatAffiliation,
+  type AffiliationOptions,
   type LoginLogEntry,
   type MemberStatus,
   type MemberSummary,
@@ -65,6 +67,8 @@ export function MemberManager() {
   const [detailUser, setDetailUser] = useState<MemberSummary | null>(null);
   const [loginLogs, setLoginLogs] = useState<LoginLogEntry[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [affiliationOptions, setAffiliationOptions] =
+    useState<AffiliationOptions | null>(null);
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
@@ -81,6 +85,9 @@ export function MemberManager() {
 
   useEffect(() => {
     void loadMembers();
+    void fetchAffiliationOptions()
+      .then(setAffiliationOptions)
+      .catch(() => setAffiliationOptions(null));
   }, [loadMembers]);
 
   const openDetail = async (id: string) => {
@@ -288,6 +295,7 @@ export function MemberManager() {
                     {formatAffiliation(
                       detailUser.affiliationType,
                       detailUser.department,
+                      affiliationOptions,
                     )}
                   </dd>
                 </div>

@@ -18,6 +18,8 @@ export interface TargetTreeNode {
   selectable: boolean;
   /** 대학 전체 = 전 학과 평균일 때 (competitiveness) */
   memberDeptCodes?: string[];
+  /** 다년 조회 상대비교용: 조회 구간에 한 번이라도 있던 학과 */
+  periodDepts?: Array<{ deptCode: string; deptName: string }>;
   children?: TargetTreeNode[];
 }
 
@@ -183,9 +185,11 @@ export class UniversitiesService {
 
   async getTargetTree(
     scope?: 'internal',
+    year?: number,
+    years?: number[],
   ): Promise<TargetTreeNode[]> {
     if (scope === 'internal') {
-      return this.buildCompetitivenessTree();
+      return this.buildCompetitivenessTree(year, years);
     }
     const [yeonsung, others] = await Promise.all([
       this.buildYeonsungTree(),
@@ -198,11 +202,25 @@ export class UniversitiesService {
    * 자체 경쟁력: 타대학 없이
    * [대학 전체] 연성대학교(전 학과 평균) / [계열/학과별] 계열-학과 트리
    */
-  private async buildCompetitivenessTree(): Promise<TargetTreeNode[]> {
+  private async buildCompetitivenessTree(
+    year?: number,
+    years?: number[],
+  ): Promise<TargetTreeNode[]> {
     const univ = await this.univRepo.findOne({
       where: { univCode: this.ysuCode },
     });
-    const org = await this.internalOrg.getTree();
+    const asOf = year ?? (years && years.length ? Math.max(...years) : undefined);
+    const org = await this.internalOrg.getTree(asOf);
+    const union =
+      years && years.length > 1
+        ? await this.internalOrg.unionDeptsForYears(years)
+        : [];
+    const unionBySeries = new Map<number, Array<{ deptCode: string; deptName: string }>>();
+    for (const d of union) {
+      const list = unionBySeries.get(d.seriesId) ?? [];
+      list.push({ deptCode: d.deptCode, deptName: d.deptName });
+      unionBySeries.set(d.seriesId, list);
+    }
     const seriesChildren: TargetTreeNode[] = org
       .filter((s) => s.departments.length > 0)
       .map((s) => ({
@@ -212,6 +230,7 @@ export class UniversitiesService {
         univCode: this.ysuCode,
         isYeonsung: true,
         selectable: true,
+        periodDepts: unionBySeries.get(s.seriesId),
         children: s.departments.map((d) => ({
           id: `ys:dept:${this.ysuCode}:${d.deptCode}`,
           label: d.deptName,
@@ -225,6 +244,9 @@ export class UniversitiesService {
     const memberDeptCodes = seriesChildren.flatMap(
       (s) => s.children?.map((d) => d.deptCode).filter((c): c is string => !!c) ?? [],
     );
+    const periodDepts = union.length
+      ? union.map((d) => ({ deptCode: d.deptCode, deptName: d.deptName }))
+      : undefined;
 
     return [
       {
@@ -242,6 +264,7 @@ export class UniversitiesService {
             isYeonsung: true,
             selectable: true,
             memberDeptCodes,
+            periodDepts,
           },
         ],
       },
@@ -261,7 +284,7 @@ export class UniversitiesService {
    * 업로드 양식/코드북용. ir_university_master·ir_department 스냅샷을 그대로 반환
    * (대학알리미 배치 후 is_active 갱신이 자동 반영됨).
    */
-  async getCodebook(): Promise<{
+  async getCodebook(year?: number): Promise<{
     generatedAt: string;
     referenceYear: number;
     yeonsung: {
@@ -288,7 +311,7 @@ export class UniversitiesService {
       seriesLg: string | null;
     }>;
   }> {
-    const referenceYear = new Date().getFullYear();
+    const referenceYear = year ?? new Date().getFullYear();
     const [univs, depts] = await Promise.all([
       this.univRepo.find({ order: { univName: 'ASC' } }),
       this.deptRepo.find({
@@ -307,7 +330,9 @@ export class UniversitiesService {
         seriesLg: d.seriesLg,
       }));
     try {
-      const internal = await this.internalOrg.listYeonsungDeptsForCodebook();
+      const internal = await this.internalOrg.listYeonsungDeptsForCodebook(
+        referenceYear,
+      );
       if (internal.length > 0) {
         ysuDepts = internal;
       }

@@ -72,6 +72,8 @@ import {
   parseTaskCode,
 } from './sp-codes';
 import { SpStructureService } from './sp-structure.service';
+import { OfficeOrgService } from '../internal-org/office-org.service';
+import { defaultOrgYear } from '../internal-org/org.constants';
 
 const VISION_IMAGE_DIR = join(process.cwd(), 'uploads', 'sp-vision');
 const VISION_IMAGE_MIME: Record<string, string> = {
@@ -190,6 +192,7 @@ export class StrategicPlanService implements OnModuleInit {
     @InjectRepository(IrSpTaskBudget)
     private readonly budgetRepo: Repository<IrSpTaskBudget>,
     private readonly structure: SpStructureService,
+    private readonly officeOrg: OfficeOrgService,
   ) {}
 
   async onModuleInit() {
@@ -272,6 +275,15 @@ export class StrategicPlanService implements OnModuleInit {
         : this.structure.isActiveAt(k.effectiveFrom, k.abolishedFrom, asOf),
     );
 
+    const officeNames = await this.officeOrg.resolveDisplayNames(
+      liveTasks.flatMap((t) => [t.primaryDept, ...(t.relatedDepts ?? [])]),
+      asOf,
+    );
+    const officeName = (value: string | null | undefined) => {
+      if (!value) return null;
+      return officeNames.get(value) ?? value;
+    };
+
     const overlayGoal = async (row: IrSpGoal) => {
       const payload = year
         ? await this.structure.overlayPayload('goal', row.goalId, asOf)
@@ -307,13 +319,18 @@ export class StrategicPlanService implements OnModuleInit {
         strategyId: String(payload?.strategyId ?? row.strategyId),
         goalId: String(payload?.goalId ?? row.goalId),
         isSpecialized: Boolean(payload?.isSpecialized ?? row.isSpecialized),
-        primaryDept:
+        primaryDept: officeName(
           payload?.primaryDept === undefined
             ? row.primaryDept
             : (payload.primaryDept as string | null),
-        relatedDepts: Array.isArray(payload?.relatedDepts)
-          ? (payload.relatedDepts as string[])
-          : (row.relatedDepts ?? []),
+        ),
+        relatedDepts: (
+          Array.isArray(payload?.relatedDepts)
+            ? (payload.relatedDepts as string[])
+            : (row.relatedDepts ?? [])
+        )
+          .map((d) => officeName(d) ?? d)
+          .filter((d): d is string => Boolean(d)),
       };
     };
     const overlaySubtask = async (row: IrSpSubtask) => {
@@ -544,21 +561,15 @@ export class StrategicPlanService implements OnModuleInit {
     return out;
   }
 
-  async listDepartments() {
-    await this.ensureDepartmentsFromTasks();
-    return this.departmentRepo.find({
-      order: { displayOrder: 'ASC', deptId: 'ASC' },
-    });
+  async listDepartments(year?: number) {
+    return this.officeOrg.listSelectable(year);
   }
 
   /** 회원가입·회원정보 소속(부서) 드롭다운. 마스터만 읽고 자동 보강하지 않는다. */
-  async listAffiliationOffices(): Promise<Array<{ deptName: string }>> {
-    const rows = await this.departmentRepo.find({
-      order: { displayOrder: 'ASC', deptId: 'ASC' },
-    });
-    return rows
-      .filter((d) => d.deptName.trim())
-      .map((d) => ({ deptName: d.deptName }));
+  async listAffiliationOffices(): Promise<
+    Array<{ officeCode: string; deptName: string; categoryName: string | null }>
+  > {
+    return this.officeOrg.listAffiliationOffices();
   }
 
   listEvaluations(year: number) {
@@ -763,7 +774,8 @@ export class StrategicPlanService implements OnModuleInit {
         strategyId: dto.strategyId,
         year: dto.year,
         isSpecialized: dto.isSpecialized,
-        primaryDept: dto.primaryDept,
+        primaryDept:
+          (await this.toOfficeCode(dto.primaryDept, dto.year)) ?? undefined,
       },
       userId,
     );
@@ -774,8 +786,17 @@ export class StrategicPlanService implements OnModuleInit {
     if (dto.taskName !== undefined) patch.taskName = dto.taskName;
     if (dto.hangulCode !== undefined) patch.hangulCode = dto.hangulCode;
     if (dto.isSpecialized !== undefined) patch.isSpecialized = dto.isSpecialized;
-    if (dto.primaryDept !== undefined) patch.primaryDept = dto.primaryDept;
-    if (dto.relatedDepts !== undefined) patch.relatedDepts = dto.relatedDepts;
+    if (dto.primaryDept !== undefined) {
+      patch.primaryDept = await this.toOfficeCode(dto.primaryDept, dto.year);
+    }
+    if (dto.relatedDepts !== undefined) {
+      const codes: string[] = [];
+      for (const name of dto.relatedDepts) {
+        const code = await this.toOfficeCode(name, dto.year);
+        if (code) codes.push(code);
+      }
+      patch.relatedDepts = codes;
+    }
     return this.structure.updateNode(
       { kind: 'task', lineageId: taskCode, year: dto.year, patch },
       userId,
@@ -1033,51 +1054,24 @@ export class StrategicPlanService implements OnModuleInit {
   /* ── 관리자: 부서 ── */
 
   async createDepartment(dto: CreateDepartmentDto) {
-    const name = dto.deptName.trim();
-    if (!name) throw new BadRequestException('부서명을 입력해 주세요.');
-    const dup = await this.departmentRepo.findOne({
-      where: { deptName: name },
+    return this.officeOrg.createOffice({
+      deptName: dto.deptName,
+      year: defaultOrgYear(),
+      isCategory: false,
+      displayOrder: dto.displayOrder,
     });
-    if (dup) throw new BadRequestException('같은 이름의 부서가 이미 있습니다.');
-    const max = await this.departmentRepo
-      .createQueryBuilder('d')
-      .select('MAX(d.displayOrder)', 'max')
-      .getRawOne<{ max: number | null }>();
-    return this.departmentRepo.save(
-      this.departmentRepo.create({
-        deptName: name,
-        displayOrder: dto.displayOrder ?? (max?.max ?? -1) + 1,
-      }),
-    );
   }
 
   async updateDepartment(deptId: number, dto: UpdateDepartmentDto) {
-    const dept = await this.departmentRepo.findOne({ where: { deptId } });
-    if (!dept) throw new NotFoundException('부서를 찾을 수 없습니다.');
-    if (dto.deptName !== undefined) {
-      const name = dto.deptName.trim();
-      if (!name) throw new BadRequestException('부서명을 입력해 주세요.');
-      const dup = await this.departmentRepo.findOne({
-        where: { deptName: name },
-      });
-      if (dup && dup.deptId !== deptId) {
-        throw new BadRequestException('같은 이름의 부서가 이미 있습니다.');
-      }
-      if (name !== dept.deptName) {
-        await this.rewriteDeptOnTasks(dept.deptName, name);
-        dept.deptName = name;
-      }
-    }
-    if (dto.displayOrder !== undefined) dept.displayOrder = dto.displayOrder;
-    return this.departmentRepo.save(dept);
+    return this.officeOrg.updateOffice(deptId, {
+      deptName: dto.deptName,
+      displayOrder: dto.displayOrder,
+      year: defaultOrgYear(),
+    });
   }
 
   async deleteDepartment(deptId: number) {
-    const dept = await this.departmentRepo.findOne({ where: { deptId } });
-    if (!dept) throw new NotFoundException('부서를 찾을 수 없습니다.');
-    await this.rewriteDeptOnTasks(dept.deptName, null);
-    await this.departmentRepo.delete(deptId);
-    return { ok: true as const };
+    return this.officeOrg.abolishOffice(deptId, defaultOrgYear());
   }
 
   /* ── 관리자: 비전·비교 ── */
@@ -1328,6 +1322,22 @@ export class StrategicPlanService implements OnModuleInit {
       if (dirty) changed.push(task);
     }
     if (changed.length > 0) await this.taskRepo.save(changed);
+  }
+
+  private async toOfficeCode(
+    value: string | null | undefined,
+    year: number,
+  ): Promise<string | null> {
+    if (!value?.trim()) return null;
+    const trimmed = value.trim();
+    const rows = await this.officeOrg.listSelectable(year);
+    const byCode = rows.find((r) => r.officeCode === trimmed);
+    if (byCode) return byCode.officeCode;
+    const byName = rows.find((r) => r.deptName === trimmed);
+    if (byName) return byName.officeCode;
+    throw new BadRequestException(
+      `등록되지 않은 부서입니다: ${trimmed}. 조직관리에서 먼저 추가해 주세요.`,
+    );
   }
 
   private async normalizeTaskDepts(

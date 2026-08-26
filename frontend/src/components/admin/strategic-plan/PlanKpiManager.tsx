@@ -239,7 +239,9 @@ function KpiMetaEditor({
           <option value="">선택</option>
           {departments.map((d) => (
             <option key={d.deptId} value={d.deptName}>
-              {d.deptName}
+              {d.categoryName
+                ? `${d.deptName} (${d.categoryName})`
+                : d.deptName}
             </option>
           ))}
         </NativeSelect>
@@ -571,7 +573,9 @@ export function PlanKpiManager({
                 <option value="">선택</option>
                 {departments.map((d) => (
                   <option key={d.deptId} value={d.deptName}>
-                    {d.deptName}
+                    {d.categoryName
+                      ? `${d.deptName} (${d.categoryName})`
+                      : d.deptName}
                   </option>
                 ))}
               </NativeSelect>

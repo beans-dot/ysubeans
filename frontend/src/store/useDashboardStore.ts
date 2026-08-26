@@ -174,16 +174,17 @@ async function fetchInternalRelativeScales(
   }
 
   let { targetTree } = get();
-  if (!targetTree.length) {
-    try {
-      const { data } = await api.get<TargetTreeNode[]>(
-        '/universities/tree?scope=internal',
-      );
-      targetTree = data;
-      set({ targetTree: data });
-    } catch {
-      targetTree = [];
-    }
+  const catalogYear = years.length ? Math.max(...years) : undefined;
+  try {
+    const { data } = await api.get<TargetTreeNode[]>(
+      catalogYear
+        ? `/universities/tree?scope=internal&year=${catalogYear}&years=${years.join(',')}`
+        : '/universities/tree?scope=internal',
+    );
+    targetTree = data;
+    set({ targetTree: data });
+  } catch {
+    if (!targetTree.length) targetTree = [];
   }
 
   const relTargets = collectInternalRelativeTargets(
@@ -406,13 +407,16 @@ export function createAnalysisStore(analysisScope: AnalysisScope) {
       return;
     }
 
+    const catalogYear = years.length ? Math.max(...years) : undefined;
     const treePath =
       analysisScope === 'internal'
-        ? '/universities/tree?scope=internal'
+        ? catalogYear
+          ? `/universities/tree?scope=internal&year=${catalogYear}&years=${years.join(',')}`
+          : '/universities/tree?scope=internal'
         : '/universities/tree';
 
     let { targetTree } = get();
-    if (!targetTree.length) {
+    if (analysisScope === 'internal' || !targetTree.length) {
       try {
         const { data } = await api.get<TargetTreeNode[]>(treePath);
         targetTree = data;

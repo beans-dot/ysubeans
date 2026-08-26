@@ -342,11 +342,15 @@ export function TargetTree() {
   const [loaded, setLoaded] = useState(false);
   const setTargetTree = useAnalysisStore((s) => s.setTargetTree);
   const analysisScope = useAnalysisStore((s) => s.analysisScope);
+  const years = useAnalysisStore((s) => s.years);
 
   useEffect(() => {
+    const catalogYear = years.length ? Math.max(...years) : undefined;
     const path =
       analysisScope === 'internal'
-        ? '/universities/tree?scope=internal'
+        ? catalogYear
+          ? `/universities/tree?scope=internal&year=${catalogYear}&years=${years.join(',')}`
+          : '/universities/tree?scope=internal'
         : '/universities/tree';
     api
       .get<TargetTreeNode[]>(path)
@@ -364,7 +368,7 @@ export function TargetTree() {
         setTargetTree([]);
       })
       .finally(() => setLoaded(true));
-  }, [setTargetTree, analysisScope]);
+  }, [setTargetTree, analysisScope, years]);
 
   return (
     <div className="max-h-[420px] overflow-y-auto rounded-md border p-2">

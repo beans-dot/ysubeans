@@ -171,13 +171,15 @@ export function AnnualEventsManager() {
             <Label htmlFor="annual-content">내용</Label>
             <textarea
               id="annual-content"
-              rows={4}
+              rows={6}
               value={form.content}
               onChange={(e) =>
                 setForm((f) => ({ ...f, content: e.target.value }))
               }
-              placeholder="예: OO학과 신설"
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder={
+                '예:\n[학과] OO과(신설) / △△과(학과명 변경)\n[행정부서] □□팀(신설)'
+              }
+              className="flex w-full whitespace-pre-wrap rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
@@ -251,7 +253,7 @@ export function AnnualEventsManager() {
                       >
                         [{ANNUAL_EVENT_CATEGORY_LABEL[event.category]}]
                       </Badge>
-                      <p className="min-w-0 flex-1 text-sm leading-relaxed">
+                      <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm leading-relaxed">
                         {event.content}
                       </p>
                       <div className="flex shrink-0 gap-1">

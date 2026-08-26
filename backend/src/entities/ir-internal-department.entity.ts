@@ -40,4 +40,10 @@ export class IrInternalDepartment {
 
   @Column({ name: 'display_order', type: 'int', default: 0 })
   displayOrder: number;
+
+  @Column({ name: 'effective_from', type: 'int', default: 2018 })
+  effectiveFrom: number;
+
+  @Column({ name: 'abolished_from', type: 'int', nullable: true })
+  abolishedFrom: number | null;
 }

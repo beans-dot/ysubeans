@@ -100,8 +100,11 @@ function YearEventsMemo({
             </div>
             <ul className="space-y-0.5 pl-0.5">
               {items.map((item) => (
-                <li key={item.eventId} className="leading-relaxed text-foreground">
-                  · {item.content}
+                <li
+                  key={item.eventId}
+                  className="whitespace-pre-wrap leading-relaxed text-foreground"
+                >
+                  {item.content}
                 </li>
               ))}
             </ul>

@@ -25,6 +25,14 @@ export class IrAnnualEvent {
   @Column({ name: 'content', type: 'text' })
   content: string;
 
+  /** manual = 관리자 입력, org = 조직관리에서 자동 생성 */
+  @Column({ name: 'source', type: 'varchar', length: 20, default: 'manual' })
+  source: string;
+
+  /** 조직관리가 마지막으로 만든 원문. 사용자 수정 여부 판별용. */
+  @Column({ name: 'auto_content', type: 'text', nullable: true })
+  autoContent: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

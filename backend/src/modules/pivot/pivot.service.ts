@@ -56,6 +56,12 @@ export class PivotService {
     return deptCode ? `${univCode}::${deptCode}` : `${univCode}::_ALL_`;
   }
 
+  private parseInternalSeriesId(groupKey?: string): number | null {
+    if (!groupKey) return null;
+    const matched = /^ys:series:[^:]+:(\d+)$/.exec(groupKey);
+    return matched ? Number(matched[1]) : null;
+  }
+
   private isUnivGroupTarget(t: PivotTargetDto): boolean {
     return (
       !!t.groupKey &&
@@ -129,12 +135,22 @@ export class PivotService {
     });
     const univMap = new Map(univs.map((u) => [u.univCode, u]));
 
+    const catalogYear = Math.max(...years);
+    let ysuUnion: Array<{ deptCode: string; deptName: string; seriesId: number }> =
+      [];
+    try {
+      ysuUnion = await this.internalOrg.unionDeptsForYears(years);
+    } catch {
+      ysuUnion = [];
+    }
+
     const neededDeptCodes = Array.from(
       new Set([
         ...individualTargets
           .map((t) => t.deptCode)
           .filter((c): c is string => !!c),
         ...deptGroupTargets.flatMap((g) => g.memberDeptCodes ?? []),
+        ...ysuUnion.map((d) => d.deptCode),
       ]),
     );
     const depts =
@@ -150,8 +166,15 @@ export class PivotService {
       depts.map((d) => [`${d.univCode}::${d.deptCode}`, d.deptName]),
     );
     try {
-      const overlay = await this.internalOrg.getDeptNameMap(this.ysuCode);
+      const overlay = await this.internalOrg.getDeptNameMap(
+        this.ysuCode,
+        catalogYear,
+      );
       overlay.forEach((name, key) => deptNameMap.set(key, name));
+      for (const d of ysuUnion) {
+        const key = `${this.ysuCode}::${d.deptCode}`;
+        if (!deptNameMap.has(key)) deptNameMap.set(key, d.deptName);
+      }
     } catch {
       // 자체 편제 조회 실패 시 공시 학과명 사용
     }
@@ -188,6 +211,9 @@ export class PivotService {
       for (const dept of g.memberDeptCodes ?? []) {
         needDeptKeys.add(this.targetKeyOf(g.univCode as string, dept));
       }
+    }
+    for (const d of ysuUnion) {
+      needDeptKeys.add(this.targetKeyOf(this.ysuCode, d.deptCode));
     }
 
     // 대학 단위(_ALL_)가 없을 때 학과값 평균으로 대학값 산출하기 위한 버킷
@@ -358,10 +384,11 @@ export class PivotService {
 
     for (const g of deptGroupTargets) {
       const univCode = g.univCode as string;
-      const members = Array.from(new Set(g.memberDeptCodes ?? []));
       const groupKey = g.groupKey as string;
       const groupLabel = g.groupLabel || groupKey;
       const isYeonsung = !!g.isYeonsung || univCode === this.ysuCode;
+      const seriesId = this.parseInternalSeriesId(groupKey);
+      const yeonsungRoot = groupKey === 'root:yeonsung';
 
       for (const metricId of metricIds) {
         const metric = metricMap.get(metricId);
@@ -370,6 +397,21 @@ export class PivotService {
         let hasAny = false;
 
         for (const year of years) {
+          let members = Array.from(new Set(g.memberDeptCodes ?? []));
+          if (isYeonsung && univCode === this.ysuCode) {
+            try {
+              if (seriesId != null) {
+                members = await this.internalOrg.memberDeptCodesForSeries(
+                  seriesId,
+                  year,
+                );
+              } else if (yeonsungRoot) {
+                members = await this.internalOrg.memberDeptCodesForUniv(year);
+              }
+            } catch {
+              // 편제 조회 실패 시 클라이언트가 보낸 목록 사용
+            }
+          }
           const deptValues: number[] = [];
           for (const dept of members) {
             const bucket =

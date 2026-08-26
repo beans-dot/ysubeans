@@ -117,14 +117,22 @@ export class AuthService implements OnModuleInit {
 
     if (type === '학과') {
       const majors = await this.internalOrgService.listAffiliationMajors();
-      if (!majors.some((m) => m.deptName === department)) {
+      const hit = majors.find(
+        (m) => m.deptCode === department || m.deptName === department,
+      );
+      if (!hit) {
         throw new BadRequestException('선택한 학과가 목록에 없습니다.');
       }
+      return { affiliationType: type, department: hit.deptCode };
     } else if (type === '부서') {
       const offices = await this.strategicPlanService.listAffiliationOffices();
-      if (!offices.some((d) => d.deptName === department)) {
+      const hit = offices.find(
+        (d) => d.officeCode === department || d.deptName === department,
+      );
+      if (!hit) {
         throw new BadRequestException('선택한 부서가 목록에 없습니다.');
       }
+      return { affiliationType: type, department: hit.officeCode };
     }
 
     return { affiliationType: type, department };

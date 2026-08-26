@@ -98,6 +98,7 @@ export interface TargetTreeNode {
   isYeonsung?: boolean;
   selectable: boolean;
   memberDeptCodes?: string[];
+  periodDepts?: Array<{ deptCode: string; deptName: string }>;
   children?: TargetTreeNode[];
 }
 
@@ -206,12 +207,15 @@ export type MemberStatus = 'pending' | 'approved' | 'rejected';
 export type AffiliationType = '학과' | '부서' | '기타';
 
 export interface AffiliationMajorOption {
+  deptCode: string;
   deptName: string;
   seriesName: string;
 }
 
 export interface AffiliationOfficeOption {
+  officeCode: string;
   deptName: string;
+  categoryName: string | null;
 }
 
 export interface AffiliationOptions {
@@ -229,9 +233,32 @@ export async function fetchAffiliationOptions() {
 export function formatAffiliation(
   affiliationType: AffiliationType | null | undefined,
   department: string,
+  options?: AffiliationOptions | null,
 ) {
   if (!affiliationType) return department;
-  return `${affiliationType} · ${department}`;
+  const label = affiliationLabel(affiliationType, department, options);
+  return `${affiliationType} · ${label}`;
+}
+
+function affiliationLabel(
+  type: AffiliationType,
+  department: string,
+  options?: AffiliationOptions | null,
+) {
+  if (!options) return department;
+  if (type === '학과') {
+    const hit = options.majors.find(
+      (m) => m.deptCode === department || m.deptName === department,
+    );
+    return hit?.deptName ?? department;
+  }
+  if (type === '부서') {
+    const hit = options.offices.find(
+      (o) => o.officeCode === department || o.deptName === department,
+    );
+    return hit?.deptName ?? department;
+  }
+  return department;
 }
 
 export function inferAffiliationType(
@@ -239,8 +266,12 @@ export function inferAffiliationType(
   department: string,
   options: AffiliationOptions,
 ): AffiliationType | '' {
-  const inMajors = options.majors.some((m) => m.deptName === department);
-  const inOffices = options.offices.some((o) => o.deptName === department);
+  const inMajors = options.majors.some(
+    (m) => m.deptCode === department || m.deptName === department,
+  );
+  const inOffices = options.offices.some(
+    (o) => o.officeCode === department || o.deptName === department,
+  );
 
   if (savedType === '학과') return inMajors ? '학과' : department ? '기타' : '학과';
   if (savedType === '부서') return inOffices ? '부서' : department ? '기타' : '부서';
@@ -363,12 +394,17 @@ export interface InternalDeptNode {
   deptName: string;
   displayOrder: number;
   rawCount: number;
+  effectiveFrom?: number;
+  abolishedFrom?: number | null;
 }
 
 export interface InternalSeriesNode {
   seriesId: number;
+  seriesCode?: string | null;
   seriesName: string;
   displayOrder: number;
   isUncategorized: boolean;
   departments: InternalDeptNode[];
+  effectiveFrom?: number;
+  abolishedFrom?: number | null;
 }

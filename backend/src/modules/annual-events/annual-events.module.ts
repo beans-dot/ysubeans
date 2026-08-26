@@ -8,5 +8,6 @@ import { AnnualEventsService } from './annual-events.service';
   imports: [TypeOrmModule.forFeature([IrAnnualEvent])],
   controllers: [AnnualEventsController],
   providers: [AnnualEventsService],
+  exports: [AnnualEventsService],
 })
 export class AnnualEventsModule {}

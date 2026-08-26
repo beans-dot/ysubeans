@@ -17,11 +17,20 @@ export class IrInternalSeries {
   @Column({ name: 'univ_code', type: 'varchar', length: 50 })
   univCode: string;
 
+  @Column({ name: 'series_code', type: 'varchar', length: 40, nullable: true })
+  seriesCode: string | null;
+
   @Column({ name: 'series_name', type: 'varchar', length: 200 })
   seriesName: string;
 
   @Column({ name: 'display_order', type: 'int', default: 0 })
   displayOrder: number;
+
+  @Column({ name: 'effective_from', type: 'int', default: 2018 })
+  effectiveFrom: number;
+
+  @Column({ name: 'abolished_from', type: 'int', nullable: true })
+  abolishedFrom: number | null;
 
   @OneToMany(() => IrInternalDepartment, (d) => d.series)
   departments: IrInternalDepartment[];

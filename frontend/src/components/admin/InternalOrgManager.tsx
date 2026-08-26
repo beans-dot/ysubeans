@@ -99,7 +99,13 @@ function reorderSeries(
     : withOrder;
 }
 
-export function InternalOrgManager() {
+export function InternalOrgManager({
+  year,
+  onChanged,
+}: {
+  year: number;
+  onChanged?: () => void;
+}) {
   const [tree, setTree] = useState<InternalSeriesNode[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -117,7 +123,7 @@ export function InternalOrgManager() {
 
   const load = () => {
     api
-      .get<InternalSeriesNode[]>('/internal-org/tree')
+      .get<InternalSeriesNode[]>('/internal-org/tree', { params: { year } })
       .then(({ data }) => {
         setTree(data);
         setDirty(false);
@@ -129,7 +135,8 @@ export function InternalOrgManager() {
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -145,9 +152,10 @@ export function InternalOrgManager() {
           displayOrder: index,
         })),
       );
-      await api.put('/internal-org/reorder', { series, departments });
+      await api.put('/internal-org/reorder', { year, series, departments });
       setDirty(false);
       load();
+      onChanged?.();
     } finally {
       setSaving(false);
     }
@@ -159,9 +167,11 @@ export function InternalOrgManager() {
     try {
       await api.post('/internal-org/series', {
         seriesName: newSeries.trim(),
+        year,
       });
       setNewSeries('');
       load();
+      onChanged?.();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } };
       alert(err.response?.data?.message ?? '계열 추가 실패');
@@ -182,9 +192,13 @@ export function InternalOrgManager() {
     }
     setBusy(true);
     try {
-      await api.put(`/internal-org/series/${s.seriesId}`, { seriesName: name });
+      await api.put(`/internal-org/series/${s.seriesId}`, {
+        seriesName: name,
+        year,
+      });
       setEditingSeriesId(null);
       load();
+      onChanged?.();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } };
       alert(err.response?.data?.message ?? '계열 이름 수정 실패');
@@ -196,13 +210,16 @@ export function InternalOrgManager() {
   const handleDeleteSeries = async (s: InternalSeriesNode) => {
     if (s.isUncategorized) return;
     const ok = window.confirm(
-      `계열 「${s.seriesName}」을(를) 삭제할까요?\n소속 학과는 「미분류」로 이동됩니다. 학과 코드와 자체 데이터는 그대로 유지됩니다.`,
+      `${year}학년도부터 계열 「${s.seriesName}」을(를) 폐지할까요?\n소속 학과는 「미분류」로 이동됩니다. 이전 학년도 조회는 그대로 유지됩니다.`,
     );
     if (!ok) return;
     setBusy(true);
     try {
-      await api.delete(`/internal-org/series/${s.seriesId}`);
+      await api.delete(`/internal-org/series/${s.seriesId}`, {
+        params: { year },
+      });
       load();
+      onChanged?.();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } };
       alert(err.response?.data?.message ?? '계열 삭제 실패');
@@ -216,9 +233,14 @@ export function InternalOrgManager() {
     if (!name) return;
     setBusy(true);
     try {
-      await api.post('/internal-org/departments', { seriesId, deptName: name });
+      await api.post('/internal-org/departments', {
+        seriesId,
+        deptName: name,
+        year,
+      });
       setNewDeptBySeries((prev) => ({ ...prev, [seriesId]: '' }));
       load();
+      onChanged?.();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } };
       alert(err.response?.data?.message ?? '학과 추가 실패');
@@ -239,9 +261,13 @@ export function InternalOrgManager() {
     }
     setBusy(true);
     try {
-      await api.put(`/internal-org/departments/${d.deptPk}`, { deptName: name });
+      await api.put(`/internal-org/departments/${d.deptPk}`, {
+        deptName: name,
+        year,
+      });
       setEditingDeptPk(null);
       load();
+      onChanged?.();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } };
       alert(err.response?.data?.message ?? '학과명 수정 실패');
@@ -253,16 +279,19 @@ export function InternalOrgManager() {
   const handleDeleteDept = async (d: InternalDeptNode) => {
     const extra =
       d.rawCount > 0
-        ? `\n이 코드(${d.deptCode})로 저장된 자체 데이터가 ${d.rawCount}건 있습니다. 트리에서만 제거되며 데이터 행은 코드 기준으로 남습니다.`
+        ? `\n이 코드(${d.deptCode})로 저장된 자체 데이터가 ${d.rawCount}건 있습니다. 데이터 행은 코드 기준으로 남습니다.`
         : '';
     const ok = window.confirm(
-      `학과 「${d.deptName}」(${d.deptCode})을(를) 삭제할까요?${extra}`,
+      `${year}학년도부터 학과 「${d.deptName}」(${d.deptCode})을(를) 폐지할까요?${extra}\n이전 학년도 조회는 그대로 유지됩니다.`,
     );
     if (!ok) return;
     setBusy(true);
     try {
-      await api.delete(`/internal-org/departments/${d.deptPk}`);
+      await api.delete(`/internal-org/departments/${d.deptPk}`, {
+        params: { year },
+      });
       load();
+      onChanged?.();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { message?: string } } };
       alert(err.response?.data?.message ?? '학과 삭제 실패');
@@ -470,7 +499,7 @@ export function InternalOrgManager() {
               className="h-8 px-2 text-destructive hover:text-destructive"
               disabled={busy}
               onClick={() => void handleDeleteSeries(s)}
-              title="계열 삭제"
+              title="계열 폐지"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -587,7 +616,7 @@ export function InternalOrgManager() {
                           className="h-8 px-2 text-destructive hover:text-destructive"
                           disabled={busy}
                           onClick={() => void handleDeleteDept(d)}
-                          title="학과 삭제"
+                          title="학과 폐지"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -650,12 +679,13 @@ export function InternalOrgManager() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          학과별 자체 경쟁력 분석 지표(competitiveness)에서 쓰는 편제입니다.
-          공시 데이터와 분리되어 있으며, 최초에는 공시 학과·코드를 복사해 둡니다.
+          학과별 자체 경쟁력 분석 지표에서 쓰는 편제입니다. 변경 적용 학년도를
+          지정한 뒤 신설·학과명 변경·폐지를 하면 그 학년도부터 조회에 반영됩니다.
           학과명은 바꿔도 코드는 그대로라 이미 올린 자체 데이터가 따라갑니다.
           신설 학과는 <span className="font-mono">INT-0001</span> 형식의 코드가
-          자동 부여됩니다. 계열은 왼쪽 손잡이로 순서를 바꾸고, 학과는 드래그하거나
-          체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요.
+          자동 부여됩니다. 계열은 2열로 보이며, 왼쪽 손잡이로 순서를 바꾸고
+          학과는 드래그하거나 체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러
+          주세요.
         </p>
 
         <div className="flex gap-2">
@@ -724,7 +754,7 @@ export function InternalOrgManager() {
                 <div
                   ref={catProvided.innerRef}
                   {...catProvided.droppableProps}
-                  className={`space-y-4 rounded-md ${
+                  className={`grid grid-cols-1 gap-4 rounded-md lg:grid-cols-2 ${
                     catSnapshot.isDraggingOver ? 'bg-muted/40' : ''
                   }`}
                 >

@@ -162,13 +162,10 @@ function emptyHierarchy(
 }
 
 export async function fetchMonitoringBundle(): Promise<MonitoringBundle> {
-  const [rawYears, metricRes, treeRes] = await Promise.all([
+  const [rawYears, metricRes] = await Promise.all([
     fetchMonitoringYears().catch(() => [] as number[]),
     api.get<CategoryTreeNode[]>('/metrics/tree', {
       params: { sourceType: 'MONITORING' },
-    }),
-    api.get<TargetTreeNode[]>('/universities/tree', {
-      params: { scope: 'internal' },
     }),
   ]);
 
@@ -177,6 +174,15 @@ export async function fetchMonitoringBundle(): Promise<MonitoringBundle> {
     availableYears = [...fallbackCalendarYears()].reverse();
   }
   const years = pivotYearsFor([...availableYears].sort((a, b) => a - b));
+  const catalogYear = years.length ? Math.max(...years) : undefined;
+  const treeRes = await api.get<TargetTreeNode[]>('/universities/tree', {
+    params: {
+      scope: 'internal',
+      ...(catalogYear
+        ? { year: catalogYear, years: years.join(',') }
+        : {}),
+    },
+  });
 
   const visibleTree = excludeHiddenFromTree(metricRes.data);
   const resolved = resolveMonitoringMetrics(visibleTree);

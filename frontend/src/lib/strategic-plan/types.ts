@@ -152,7 +152,9 @@ export interface SpChangeLog {
 export interface SpDepartment {
   deptId: number;
   deptName: string;
-  displayOrder: number;
+  officeCode?: string;
+  categoryName?: string | null;
+  displayOrder?: number;
 }
 
 export interface SpEvaluation {
