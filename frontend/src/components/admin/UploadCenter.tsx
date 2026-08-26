@@ -29,19 +29,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 
 type UploadResult =
   | {
       status: 'SUCCESS';
       inserted: number;
       updated: number;
+      skipped: number;
       metricsCreated?: number;
-    }
-  | {
-      status: 'NEED_CONFIRM_OVERWRITE';
-      message: string;
-      conflictCount: number;
-      samples: string[];
+      rowSummary: string;
     }
   | { status: 'NEED_CONFIRM_LOCKED'; message: string; lockedYears: number[] };
 
@@ -511,8 +509,7 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
-  const [confirmLocked, setConfirmLocked] = useState(false);
+  const [overwriteExisting, setOverwriteExisting] = useState(false);
   const [downloading, setDownloading] = useState<'template' | 'codebook' | null>(
     null,
   );
@@ -527,10 +524,7 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
   const [codebookQuery, setCodebookQuery] = useState('');
   const [codebookTab, setCodebookTab] = useState<CodebookTab>('ysu');
 
-  const doUpload = async (opts: {
-    confirmOverwrite: boolean;
-    confirmLocked: boolean;
-  }) => {
+  const doUpload = async (opts: { confirmLocked: boolean }) => {
     if (!file) return;
     setBusy(true);
     setError(null);
@@ -539,15 +533,14 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
       form.append('file', file);
       const { data } = await api.post<UploadResult>('/upload/excel', form, {
         params: {
-          ...opts,
+          overwriteExisting: overwriteExisting ? 'true' : 'false',
+          confirmLocked: opts.confirmLocked ? 'true' : 'false',
           sourceType: mode === 'monitoring' ? 'MONITORING' : 'INTERNAL',
         },
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setResult(data);
       if (data.status === 'SUCCESS') {
-        setConfirmOverwrite(false);
-        setConfirmLocked(false);
         window.dispatchEvent(new Event('ir-metrics-changed'));
       }
     } catch (e: unknown) {
@@ -560,9 +553,7 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
   };
 
   const handleInitialUpload = () => {
-    setConfirmOverwrite(false);
-    setConfirmLocked(false);
-    doUpload({ confirmOverwrite: false, confirmLocked: false });
+    doUpload({ confirmLocked: false });
   };
 
   const handleDownloadTemplate = async (kind: TemplateKind) => {
@@ -837,44 +828,26 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
           <Button onClick={handleInitialUpload} disabled={!file || busy}>
             <Upload className="mr-1 h-4 w-4" /> 업로드
           </Button>
+          <div className="flex items-center gap-2">
+            <Switch
+              id={`${mode}-overwrite`}
+              checked={overwriteExisting}
+              onCheckedChange={setOverwriteExisting}
+              disabled={busy}
+            />
+            <Label htmlFor={`${mode}-overwrite`}>기존 데이터 수정</Label>
+          </div>
         </div>
+        <p className="text-xs text-muted-foreground">
+          {overwriteExisting
+            ? '켜짐: 연도·대학·학과·지표명이 같은 기존 값을 엑셀 값으로 바꿉니다.'
+            : '꺼짐: 중복은 건너뛰고, 아직 없는 데이터만 넣습니다.'}
+        </p>
 
         {error && (
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
-          </div>
-        )}
-
-        {result?.status === 'NEED_CONFIRM_OVERWRITE' && (
-          <div className="space-y-2 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
-            <div className="flex items-center gap-2 font-bold">
-              <AlertTriangle className="h-4 w-4" /> 덮어쓰기 확인
-            </div>
-            <p>{result.message}</p>
-            <ul className="list-disc pl-5 text-xs">
-              {result.samples.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ul>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  setConfirmOverwrite(true);
-                  doUpload({ confirmOverwrite: true, confirmLocked });
-                }}
-              >
-                덮어쓰기
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setResult(null)}
-              >
-                취소
-              </Button>
-            </div>
           </div>
         )}
 
@@ -889,8 +862,7 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
                 size="sm"
                 variant="destructive"
                 onClick={() => {
-                  setConfirmLocked(true);
-                  doUpload({ confirmOverwrite: true, confirmLocked: true });
+                  doUpload({ confirmLocked: true });
                 }}
               >
                 잠금 무시하고 수정
@@ -907,14 +879,32 @@ function ExcelUploadPanel({ mode }: { mode: UploadMode }) {
         )}
 
         {result?.status === 'SUCCESS' && (
-          <div className="flex items-center gap-2 rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">
-            <CheckCircle2 className="h-4 w-4" />
-            업로드 완료: 신규 {result.inserted}건, 갱신 {result.updated}건
-            {typeof result.metricsCreated === 'number' &&
-            result.metricsCreated > 0
-              ? `, 신규 지표 ${result.metricsCreated}개 → 「분류없음」`
-              : ''}
-            .
+          <div
+            className={`space-y-1 rounded-md p-3 text-sm ${
+              result.skipped > 0
+                ? 'bg-amber-50 text-amber-900'
+                : 'bg-emerald-50 text-emerald-900'
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              {result.skipped > 0 ? (
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+              <div className="space-y-1">
+                <p>
+                  업로드 완료: 신규 {result.inserted}건, 갱신 {result.updated}건
+                  {result.skipped > 0 ? `, 받지 않음 ${result.skipped}건` : ''}
+                  {typeof result.metricsCreated === 'number' &&
+                  result.metricsCreated > 0
+                    ? `, 신규 지표 ${result.metricsCreated}개 → 「분류없음」`
+                    : ''}
+                  .
+                </p>
+                {result.rowSummary ? <p>{result.rowSummary}</p> : null}
+              </div>
+            </div>
           </div>
         )}
       </CardContent>

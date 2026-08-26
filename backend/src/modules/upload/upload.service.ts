@@ -21,7 +21,8 @@ import {
 } from '../metrics/metric-labels';
 
 export interface UploadOptions {
-  confirmOverwrite?: boolean;
+  /** 켜면 중복(year+univ+dept+metric)을 엑셀 값으로 덮어쓴다. 끄면 중복만 건너뛴다. */
+  overwriteExisting?: boolean;
   confirmLocked?: boolean;
   sourceType?: Extract<MetricSourceType, 'INTERNAL' | 'MONITORING'>;
 }
@@ -57,19 +58,52 @@ export type UploadResult =
       status: 'SUCCESS';
       inserted: number;
       updated: number;
+      skipped: number;
       metricsCreated: number;
-    }
-  | {
-      status: 'NEED_CONFIRM_OVERWRITE';
-      message: string;
-      conflictCount: number;
-      samples: string[];
+      /** 예: "1~78, 80~100행 받음, 79행 받지않음 (기존 데이터와 중복)" */
+      rowSummary: string;
     }
   | {
       status: 'NEED_CONFIRM_LOCKED';
       message: string;
       lockedYears: number[];
     };
+
+/** 행 번호 배열을 "1~78, 80, 82~100" 형태로 압축 */
+export function formatRowRanges(rowNumbers: number[]): string {
+  if (rowNumbers.length === 0) return '';
+  const sorted = [...new Set(rowNumbers)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const n = sorted[i];
+    if (n === prev + 1) {
+      prev = n;
+      continue;
+    }
+    parts.push(start === prev ? `${start}` : `${start}~${prev}`);
+    start = prev = n;
+  }
+  parts.push(start === prev ? `${start}` : `${start}~${prev}`);
+  return parts.join(', ');
+}
+
+function buildRowSummary(
+  acceptedRowNumbers: number[],
+  skippedRowNumbers: number[],
+): string {
+  const parts: string[] = [];
+  if (acceptedRowNumbers.length > 0) {
+    parts.push(`${formatRowRanges(acceptedRowNumbers)}행 받음`);
+  }
+  if (skippedRowNumbers.length > 0) {
+    parts.push(
+      `${formatRowRanges(skippedRowNumbers)}행 받지않음 (기존 데이터와 중복)`,
+    );
+  }
+  return parts.join(', ');
+}
 
 @Injectable()
 export class UploadService {
@@ -491,7 +525,8 @@ export class UploadService {
   }
 
   /**
-   * 3단계 검증 트랜잭션. 실패 시 전체 Rollback.
+   * 엑셀 적재. 검증 실패 시 전체 Rollback.
+   * 중복(year+univ+dept+metric)은 overwriteExisting이면 덮어쓰고, 아니면 해당 행만 건너뛴다.
    */
   async processUpload(
     buffer: Buffer,
@@ -538,43 +573,39 @@ export class UploadService {
           ),
         );
 
-        const lockedYears = new Set<number>();
+        const overwriteExisting = !!options.overwriteExisting;
+        const toApply: ParsedRow[] = [];
+        const skipped: ParsedRow[] = [];
         for (const r of rows) {
-          const found = existingMap.get(
+          const isDup = existingMap.has(
             existKey(r.year, r.univCode, r.deptCode, r.metricId),
           );
-          if (found?.isLocked) lockedYears.add(r.year);
-        }
-        if (lockedYears.size > 0 && !options.confirmLocked) {
-          throw new UploadInterrupt({
-            status: 'NEED_CONFIRM_LOCKED',
-            message: `마감(잠금)된 연도 데이터가 포함되어 있습니다: ${Array.from(
-              lockedYears,
-            ).join(', ')}. 그래도 수정하시겠습니까?`,
-            lockedYears: Array.from(lockedYears),
-          });
+          if (isDup && !overwriteExisting) skipped.push(r);
+          else toApply.push(r);
         }
 
-        const conflicts = rows.filter((r) =>
-          existingMap.has(existKey(r.year, r.univCode, r.deptCode, r.metricId)),
-        );
-        if (conflicts.length > 0 && !options.confirmOverwrite) {
-          throw new UploadInterrupt({
-            status: 'NEED_CONFIRM_OVERWRITE',
-            message: `이미 존재하는 데이터가 ${conflicts.length}건 있습니다. 덮어쓰시겠습니까?`,
-            conflictCount: conflicts.length,
-            samples: conflicts
-              .slice(0, 5)
-              .map(
-                (c) =>
-                  `${c.year} / ${c.univCode} / ${c.deptCode} / ${c.metricName}`,
-              ),
-          });
+        if (overwriteExisting) {
+          const lockedYears = new Set<number>();
+          for (const r of toApply) {
+            const found = existingMap.get(
+              existKey(r.year, r.univCode, r.deptCode, r.metricId),
+            );
+            if (found?.isLocked) lockedYears.add(r.year);
+          }
+          if (lockedYears.size > 0 && !options.confirmLocked) {
+            throw new UploadInterrupt({
+              status: 'NEED_CONFIRM_LOCKED',
+              message: `마감(잠금)된 연도 데이터가 포함되어 있습니다: ${Array.from(
+                lockedYears,
+              ).join(', ')}. 그래도 수정하시겠습니까?`,
+              lockedYears: Array.from(lockedYears),
+            });
+          }
         }
 
         let inserted = 0;
         let updated = 0;
-        for (const r of rows) {
+        for (const r of toApply) {
           const key = existKey(r.year, r.univCode, r.deptCode, r.metricId);
           const isUpdate = existingMap.has(key);
           await manager
@@ -602,13 +633,22 @@ export class UploadService {
 
         const detail = await this.buildUploadDetail(
           manager,
-          rows,
+          toApply,
           new Set(createdMetricIds),
         );
 
+        const rowSummary = buildRowSummary(
+          toApply.map((r) => r.rowNumber),
+          skipped.map((r) => r.rowNumber),
+        );
+        const sourceLabel =
+          sourceType === 'MONITORING' ? '모니터링' : '자체';
+        const skipNote =
+          skipped.length > 0 ? `, 건너뜀 ${skipped.length}건` : '';
+
         await manager.getRepository(IrUpdateLog).save({
           updateType: 'EXCEL_UPLOAD',
-          logText: `자체 데이터 엑셀 업로드 (신규 ${inserted}건, 갱신 ${updated}건, 신규지표 ${metricsCreated}개)`,
+          logText: `${sourceLabel} 데이터 엑셀 업로드 (신규 ${inserted}건, 갱신 ${updated}건${skipNote}, 신규지표 ${metricsCreated}개)`,
           detail,
         });
 
@@ -616,7 +656,9 @@ export class UploadService {
           status: 'SUCCESS',
           inserted,
           updated,
+          skipped: skipped.length,
           metricsCreated,
+          rowSummary,
         } as UploadResult;
       })
       .catch((err) => {

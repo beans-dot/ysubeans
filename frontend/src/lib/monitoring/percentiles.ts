@@ -8,14 +8,10 @@ export const COMPARE_BAR_COLORS = {
   bottom: '#EF9A9A',
 } as const;
 
-function percentileRank(index: number, n: number): number {
-  if (n <= 1) return 50;
-  return (index / (n - 1)) * 100;
-}
-
 /**
- * 동일 위계 집단에서 결측을 제외한 뒤 rank/(n-1)*100.
- * n=1이면 하이라이트 없음.
+ * 동일 위계에서 결측을 제외한 뒤 상위/하위 10%만 하이라이트한다.
+ * 동점 그룹이 쿼터(K = floor(N * 0.1))를 초과하면 그 그룹 전체를 제외한다.
+ * N < 10 이거나 모든 값이 같으면 하이라이트 없음.
  */
 export function assignHighlightBands(
   items: Array<{ id: string; value: number | null }>,
@@ -27,15 +23,26 @@ export function assignHighlightBands(
   const valid = items.filter(
     (i): i is { id: string; value: number } => i.value != null,
   );
-  if (valid.length <= 1) return result;
+  const n = valid.length;
+  const k = Math.floor(n * 0.1);
+  if (k === 0) return result;
 
-  const sorted = [...valid].sort((a, b) => a.value - b.value);
-  sorted.forEach((item, idx) => {
-    const p = percentileRank(idx, sorted.length);
-    const highIsGood = direction === 'higher-better';
-    if (p >= 90) result[item.id] = highIsGood ? 'top' : 'bottom';
-    else if (p <= 10) result[item.id] = highIsGood ? 'bottom' : 'top';
-  });
+  const scores = valid.map((item) => item.value);
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+  if (min === max) return result;
+
+  const highIsGood = direction === 'higher-better';
+  for (const current of valid) {
+    const atLeastAsHigh = valid.filter((item) => item.value >= current.value)
+      .length;
+    const atLeastAsLow = valid.filter((item) => item.value <= current.value)
+      .length;
+    const isHigh = atLeastAsHigh <= k;
+    const isLow = atLeastAsLow <= k;
+    if (isHigh) result[current.id] = highIsGood ? 'top' : 'bottom';
+    else if (isLow) result[current.id] = highIsGood ? 'bottom' : 'top';
+  }
   return result;
 }
 

@@ -17,7 +17,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file'))
   async uploadExcel(
     @UploadedFile() file: Express.Multer.File,
-    @Query('confirmOverwrite') confirmOverwrite?: string,
+    @Query('overwriteExisting') overwriteExisting?: string,
     @Query('confirmLocked') confirmLocked?: string,
     @Query('sourceType') sourceType?: string,
   ) {
@@ -25,7 +25,7 @@ export class UploadController {
       throw new BadRequestException('업로드된 파일이 없습니다.');
     }
     return this.uploadService.processUpload(file.buffer, {
-      confirmOverwrite: confirmOverwrite === 'true',
+      overwriteExisting: overwriteExisting === 'true',
       confirmLocked: confirmLocked === 'true',
       sourceType: sourceType === 'MONITORING' ? 'MONITORING' : 'INTERNAL',
     });

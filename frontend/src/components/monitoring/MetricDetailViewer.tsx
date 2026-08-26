@@ -73,8 +73,9 @@ export function MetricDetailViewer({
         <p className="text-sm text-muted-foreground">
           {view.selectedYear}년 기준으로 계열·학과를 켜면 해당 위계가 모두 가로
           막대로 표시됩니다. 같은 위계에서 상위 10%는 밝은 파랑, 하위 10%는 밝은
-          빨강입니다. 달성값순, 이름순, 학과나열순(편제 순서)과 오름/내림차순을
-          바꿀 수 있습니다.
+          빨강입니다. 모든 값이 같거나, 동점 때문에 10%를 넘기면 해당 구간은
+          색을 칠하지 않습니다. 달성값순, 이름순, 학과나열순(편제 순서)과
+          오름/내림차순을 바꿀 수 있습니다.
           {view.studentBreakdown && view.studentBreakdown.keys.length >= 2
             ? ' 재학생 구성 항목을 2개 이상 켜면 총계 기준 누적 가로 막대로 구분하고, 항목별 인원과 비중은 막대에 마우스를 올리면 볼 수 있습니다.'
             : view.studentBreakdown
