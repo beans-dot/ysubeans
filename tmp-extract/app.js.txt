@@ -1,0 +1,813 @@
+"use strict";
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const GOALS = DATA.goals;
+const YEARS = ["2022","2023","2024","2025","2026","2027"];
+const state = { goal: "", dept: "", q: "", spec: false, view: "strategy", sort: { key: "", dir: 1 }, cmp: "jc", evalYear: "2026" };
+const CMP = JSON.parse(document.getElementById("cmpdata").textContent);
+const VIEWS = ["strategy", "kpi", "dept", "compare", "eval"];
+const openKpis = new Set();
+const openDepts = new Set();
+
+const kpiByCode = {};
+DATA.kpis.forEach(k => { kpiByCode[k.code] = k; });
+const stratById = {};
+DATA.strategies.forEach(s => { stratById[s.id] = s; });
+const taskByShort = {};
+DATA.tasks.forEach(t => { taskByShort[t.code.split("-")[0]] = t; });
+
+function fmt(v) {
+  if (v === null || v === undefined) return "–";
+  if (typeof v !== "number") return String(v);
+  if (Number.isInteger(v)) return v.toLocaleString("ko-KR");
+  return (Math.round(v * 10) / 10).toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+function gc(id) { return `var(--g-${id})`; }
+function gbg(id) { return `var(--g-${id}-bg)`; }
+
+/* ── theme toggle (v2) ── */
+const THEME_KEY = "ysu_vision2027_theme";
+const THEME_SEQ = ["system", "light", "dark"];
+const THEME_LABEL = { system: "테마: 시스템", light: "테마: 라이트", dark: "테마: 다크" };
+let themeMode = "system";
+try { const s = localStorage.getItem(THEME_KEY); if (THEME_SEQ.includes(s)) themeMode = s; } catch (e) {}
+function applyTheme() {
+  if (themeMode === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", themeMode);
+  document.getElementById("themebtn").textContent = THEME_LABEL[themeMode];
+}
+document.getElementById("themebtn").addEventListener("click", () => {
+  themeMode = THEME_SEQ[(THEME_SEQ.indexOf(themeMode) + 1) % THEME_SEQ.length];
+  try { localStorage.setItem(THEME_KEY, themeMode); } catch (e) {}
+  applyTheme();
+});
+applyTheme();
+
+/* ── print (v2) ── */
+document.getElementById("printbtn").addEventListener("click", () => window.print());
+
+/* ── vision system section (v2) ── */
+function renderVision() {
+  const v = DATA.vision || {};
+  const pairs = (v["교훈_인재상"] || []).map(p =>
+    `<div class="vpair"><b>${esc(p["교훈"])}</b><span>${esc(p["인재상"])}</span></div>`).join("");
+  const c3 = v["인재상_3C"] || {};
+  const c3chips = (c3["요소"] || []).map(x => `<span class="vchip em">${esc(x)}</span>`).join("");
+  const found = (v["건학이념"] || []).map(x => `<span class="vchip em">${esc(x)}</span>`).join("");
+  const keych = (v.vision_key_indicators || []).map(x => `<span class="vchip">${esc(x)}</span>`).join("");
+  document.getElementById("vbody").innerHTML = `
+    <div class="vrow"><span class="vlab">건학이념</span><span class="vval"><span class="vchips">${found}</span></span></div>
+    <div class="vrow"><span class="vlab">교훈·인재상</span><span class="vval"><div class="vpairs">${pairs}</div></span></div>
+    <div class="vrow"><span class="vlab">사명</span><span class="vval">${esc(v["사명"] || "")}</span></div>
+    <div class="vrow"><span class="vlab">${esc(c3["명칭"] || "3C형 인재")}</span><span class="vval"><span class="vchips">${c3chips}</span></span></div>
+    <div class="vrow"><span class="vlab">비전목표</span><span class="vval vgoal">${esc(v.vision_goal || "")}</span></div>
+    <div class="vrow"><span class="vlab">8대 주요지표</span><span class="vval"><span class="vchips">${keych}</span></span></div>`;
+  const sec = document.getElementById("vsec");
+  document.getElementById("vsectoggle").addEventListener("click", () => {
+    const open = sec.classList.toggle("open");
+    document.getElementById("vsectoggle").setAttribute("aria-expanded", open ? "true" : "false");
+  });
+}
+
+/* ── filtering ── */
+function taskMatchBase(t) {
+  if (state.goal && t.goal_id !== state.goal) return false;
+  if (state.spec && !t.특성화연계) return false;
+  if (state.q) {
+    const q = state.q.toLowerCase();
+    const hay = [t.code, t.name, t.책임부서, ...(t.연관부서 || []),
+      ...(t.subtasks || []).map(s => s.name),
+      ...(t.kpi_codes || []).map(c => (kpiByCode[c] || {}).name || "")].join(" ").toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+function taskMatch(t) {
+  if (state.dept && t.책임부서 !== state.dept) return false;
+  return taskMatchBase(t);
+}
+function kpiMatch(k) {
+  const t = taskByShort[k.task_code];
+  if (state.goal && k.goal_id !== state.goal) return false;
+  if (state.dept && (!t || t.책임부서 !== state.dept)) return false;
+  if (state.spec && (!t || !t.특성화연계)) return false;
+  if (state.q) {
+    const q = state.q.toLowerCase();
+    const hay = [k.code, k.name, k.formula || "", t ? t.name : "", t ? t.책임부서 : ""].join(" ").toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+/* ── header stats ── */
+function renderStats() {
+  const items = [
+    [DATA.goals.length, "발전전략"],
+    [DATA.strategies.length, "전략과제"],
+    [DATA.tasks.length, "실행과제"],
+    [DATA.tasks.reduce((a, t) => a + (t.subtasks || []).length, 0), "TASK"],
+    [DATA.kpis.length, "KPI"],
+    [new Set(DATA.tasks.map(t => t.책임부서)).size, "책임부서"]
+  ];
+  document.getElementById("statrow").innerHTML = items.map(([n, l]) =>
+    `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+}
+
+/* ── controls ── */
+function renderChips() {
+  const el = document.getElementById("goalchips");
+  const all = `<button class="chip" data-goal="" aria-pressed="${state.goal === ""}">전체</button>`;
+  el.innerHTML = all + GOALS.map(g =>
+    `<button class="chip" data-goal="${g.id}" aria-pressed="${state.goal === g.id}">
+      <span class="dot" style="background:${gc(g.id)}"></span>${g.id}. ${esc(g.name)}</button>`).join("");
+  el.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => {
+    state.goal = b.dataset.goal === state.goal ? "" : b.dataset.goal;
+    renderChips(); renderAll();
+  }));
+}
+function initControls() {
+  const depts = [...new Set(DATA.tasks.map(t => t.책임부서))].sort((a, b) => a.localeCompare(b, "ko"));
+  const sel = document.getElementById("deptsel");
+  sel.innerHTML = `<option value="">모든 책임부서</option>` + depts.map(d => `<option>${esc(d)}</option>`).join("");
+  sel.addEventListener("change", () => { state.dept = sel.value; renderAll(); });
+  const spec = document.getElementById("specchip");
+  spec.addEventListener("click", () => {
+    state.spec = !state.spec;
+    spec.setAttribute("aria-pressed", state.spec ? "true" : "false");
+    renderAll();
+  });
+  let deb;
+  document.getElementById("q").addEventListener("input", e => {
+    clearTimeout(deb);
+    deb = setTimeout(() => { state.q = e.target.value.trim(); renderAll(); }, 160);
+  });
+  const ysel = document.getElementById("evalyearsel");
+  ysel.innerHTML = EVAL_YEARS.map(y =>
+    `<option value="${y}"${y === state.evalYear ? " selected" : ""}>${y}학년도</option>`).join("");
+  ysel.addEventListener("change", () => { state.evalYear = ysel.value; renderAll(); });
+  document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+    state.view = t.dataset.view;
+    document.querySelectorAll(".tab").forEach(x => x.setAttribute("aria-selected", x === t ? "true" : "false"));
+    VIEWS.forEach(v => document.getElementById("view-" + v).classList.toggle("hidden", v !== state.view));
+    renderAll();
+  }));
+}
+
+/* ── strategy view ── */
+function renderStrategy() {
+  const root = document.getElementById("view-strategy");
+  const goals = GOALS.filter(g => !state.goal || g.id === state.goal);
+  let shown = 0;
+  root.innerHTML = goals.map(g => {
+    const strats = DATA.strategies.filter(s => s.goal_id === g.id);
+    const blocks = strats.map(s => {
+      const tasks = DATA.tasks.filter(t => t.strategy_id === s.id && taskMatch(t));
+      if (!tasks.length) return "";
+      shown += tasks.length;
+      const rows = tasks.map(t => {
+        const subs = (t.subtasks || []).map(st =>
+          `<li>${esc(st.name)}<span class="scode">${esc(st.code)}</span></li>`).join("");
+        const kpis = (t.kpi_codes || []).map(c => {
+          const k = kpiByCode[c]; if (!k) return "";
+          const last = k.targets ? k.targets["2027"] : null;
+          return `<div class="k"><span class="kc">${esc(k.code)}</span><span>${esc(k.name)}</span>
+            <span class="kv">${fmt(k.baseline)} → ${fmt(last)}${k.unit ? esc(k.unit) : ""} ('27)</span></div>`;
+        }).join("");
+        const rel = (t.연관부서 && t.연관부서.length)
+          ? `<span class="rel">연관: ${t.연관부서.map(esc).join(", ")}</span>` : "";
+        return `<li>
+          <button class="trow" aria-expanded="false">
+            <span class="caret">▶</span><span class="tname">${esc(t.name)}</span>
+            <span class="badges">
+              <span class="b dept" style="--gc-bg:${gbg(g.id)}">${esc(t.책임부서)}</span>
+              <span class="b">${esc(t.code)}</span>
+              ${t.특성화연계 ? `<span class="b spec">특성화 연계</span>` : ""}
+              <span class="b">KPI ${(t.kpi_codes || []).length} · TASK ${(t.subtasks || []).length}</span>
+            </span>
+          </button>
+          <div class="tdetail">
+            ${rel ? rel : ""}
+            ${subs ? `<h4>세부 TASK</h4><ul class="subs" style="--gc:${gc(g.id)}">${subs}</ul>` : ""}
+            ${kpis ? `<h4>연계 KPI (기준값 → 2027 목표)</h4><div class="kmini" style="--gc:${gc(g.id)}">${kpis}</div>` : ""}
+          </div>
+        </li>`;
+      }).join("");
+      return `<div class="strat" style="--gc:${gc(g.id)}">
+        <h3><span class="sid">${esc(s.id)}</span>${esc(s.name)}</h3>
+        <ul class="tlist">${rows}</ul>
+      </div>`;
+    }).filter(Boolean).join("");
+    if (!blocks) return "";
+    const nT = DATA.tasks.filter(t => t.goal_id === g.id && taskMatch(t)).length;
+    const nK = DATA.kpis.filter(k => k.goal_id === g.id).length;
+    return `<div class="goalblock" style="--gc:${gc(g.id)}">
+      <div class="goalhead">
+        <span class="gbadge">${g.id}</span>
+        <h2>${g.no}. ${esc(g.name)}</h2>
+        <span class="gm">전략과제 ${strats.length} · 실행과제 ${nT} · KPI ${nK}</span>
+      </div>
+      <div class="stratgrid">${blocks}</div>
+    </div>`;
+  }).join("") || "";
+  if (!root.innerHTML) root.innerHTML = `<div class="empty">조건에 맞는 실행과제가 없습니다.</div>`;
+  root.querySelectorAll(".trow").forEach(b => b.addEventListener("click", () => {
+    const li = b.closest("li");
+    const open = li.classList.toggle("open");
+    b.setAttribute("aria-expanded", open ? "true" : "false");
+  }));
+  return shown;
+}
+
+/* ── KPI view ── */
+function sparkline(k) {
+  const vals = YEARS.map(y => k.targets ? k.targets[y] : null);
+  const nums = vals.filter(v => typeof v === "number");
+  if (typeof k.baseline === "number") nums.push(k.baseline);
+  if (!nums.length) return `<span class="null">–</span>`;
+  let lo = Math.min(...nums), hi = Math.max(...nums);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const W = 132, H = 30, P = 4;
+  const x = i => P + i * (W - 2 * P) / (YEARS.length - 1);
+  const y = v => H - P - (v - lo) * (H - 2 * P) / (hi - lo);
+  let d = "", started = false;
+  vals.forEach((v, i) => {
+    if (typeof v !== "number") { started = false; return; }
+    d += (started ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1) + " ";
+    started = true;
+  });
+  const col = gc(k.goal_id);
+  let lastIdx = -1;
+  vals.forEach((v, i) => { if (typeof v === "number") lastIdx = i; });
+  const pts = vals.map((v, i) => {
+    if (typeof v !== "number") return "";
+    const end = i === lastIdx;
+    return `<circle class="pt" cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${end ? 3.4 : 2.2}"
+      fill="${end ? col : "var(--card)"}" stroke="${col}" stroke-width="1.6"
+      data-k="${esc(k.code)}" data-y="${YEARS[i]}"></circle>`;
+  }).join("");
+  const base = (typeof k.baseline === "number")
+    ? `<line x1="${P}" x2="${W - P}" y1="${y(k.baseline).toFixed(1)}" y2="${y(k.baseline).toFixed(1)}"
+        stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="2 3" opacity=".7"></line>` : "";
+  return `<svg class="spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-k="${esc(k.code)}" role="img"
+    aria-label="${esc(k.name)} 목표 궤적">${base}<path d="${d.trim()}" fill="none" stroke="${col}" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round"></path>${pts}</svg>`;
+}
+const SORT_KEYS = {
+  code: k => k.code,
+  baseline: k => (typeof k.baseline === "number" ? k.baseline : null),
+  t27: k => (k.targets && typeof k.targets["2027"] === "number" ? k.targets["2027"] : null)
+};
+function sortKpis(list) {
+  const { key, dir } = state.sort;
+  if (!key || !SORT_KEYS[key]) return list;
+  const get = SORT_KEYS[key];
+  return [...list].sort((a, b) => {
+    const va = get(a), vb = get(b);
+    const na = va === null || va === undefined, nb = vb === null || vb === undefined;
+    if (na && nb) return 0;
+    if (na) return 1;            /* null은 방향과 무관하게 항상 끝 */
+    if (nb) return -1;
+    if (typeof va === "string") return va.localeCompare(vb) * dir;
+    return (va - vb) * dir;
+  });
+}
+function kpiDetailRow(k) {
+  const t = taskByShort[k.task_code];
+  const tys = YEARS.map(y => {
+    const v = k.targets ? k.targets[y] : null;
+    return `<span class="ty"><span>${y}</span><b>${fmt(v)}${(v !== null && v !== undefined && k.unit) ? esc(k.unit) : ""}</b></span>`;
+  }).join("");
+  return `<tr class="kdetail" data-for="${esc(k.code)}"><td colspan="11">
+    <div class="kd-grid">
+      <div class="kd wide"><h5>산출식</h5><p>${esc(k.formula || "–")}</p></div>
+      <div class="kd"><h5>소속 실행과제</h5><p>${t ? esc(t.code) + " · " + esc(t.name) : "–"}</p></div>
+      <div class="kd"><h5>책임부서</h5><p>${t ? esc(t.책임부서) : "–"}</p></div>
+      <div class="kd"><h5>기준값 참조</h5><p>${fmt(k.baseline)}${k.unit ? esc(k.unit) : ""}${k.baseline_ref ? " (" + esc(k.baseline_ref) + ")" : ""}</p></div>
+      <div class="kd wide"><h5>연도별 목표 (2022~2027)</h5><div class="kd-targets">${tys}</div></div>
+      <div class="kd wide"><h5>출처</h5><p>${esc(k.source || "–")}</p></div>
+    </div>
+  </td></tr>`;
+}
+function renderKpi() {
+  const root = document.getElementById("view-kpi");
+  const list = sortKpis(DATA.kpis.filter(kpiMatch));
+  if (!list.length) { root.innerHTML = `<div class="empty">조건에 맞는 KPI가 없습니다.</div>`; return 0; }
+  const rows = list.map(k => {
+    const t = taskByShort[k.task_code];
+    const open = openKpis.has(k.code);
+    return `<tr class="krow${open ? " kopen" : ""}" data-code="${esc(k.code)}" tabindex="0"
+      aria-expanded="${open ? "true" : "false"}" title="클릭하면 산출식·출처·연도별 목표 상세를 펼칩니다">
+      <td><span class="kcode"><span class="caret">▶</span><span class="dot" style="background:${gc(k.goal_id)}"></span>${esc(k.code)}</span></td>
+      <td><span class="kname">${esc(k.name)}</span>
+        <span class="ktask">${t ? esc(t.name) + " · " + esc(t.책임부서) : ""}</span></td>
+      <td><span class="unit">${esc(k.unit || "")}</span></td>
+      <td class="num">${fmt(k.baseline)}</td>
+      ${YEARS.map(y => `<td class="num">${fmt(k.targets ? k.targets[y] : null)}</td>`).join("")}
+      <td>${sparkline(k)}</td>
+    </tr>${open ? kpiDetailRow(k) : ""}`;
+  }).join("");
+  const arr = key => state.sort.key === key ? `<span class="arr">${state.sort.dir === 1 ? "▲" : "▼"}</span>` : "";
+  root.innerHTML = `<div class="tablewrap"><table>
+    <thead><tr>
+      <th class="sortable" data-sort="code" title="코드로 정렬">코드${arr("code")}</th>
+      <th>지표명 · 실행과제 · 책임부서</th><th>단위</th>
+      <th class="num sortable" data-sort="baseline" title="기준값으로 정렬">기준값${arr("baseline")}</th>
+      ${YEARS.map(y => {
+        const short = "'" + y.slice(2) + " 목표";
+        return y === "2027"
+          ? `<th class="num sortable" data-sort="t27" title="2027 목표로 정렬">${short}${arr("t27")}</th>`
+          : `<th class="num">${short}</th>`;
+      }).join("")}
+      <th>목표 궤적 '22–'27 <span style="font-weight:500;text-transform:none;letter-spacing:0">(점선 = 기준값)</span></th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  root.querySelectorAll("th.sortable").forEach(th => th.addEventListener("click", () => {
+    const key = th.dataset.sort;
+    if (state.sort.key === key) state.sort.dir = -state.sort.dir;
+    else { state.sort.key = key; state.sort.dir = 1; }
+    renderAll();
+  }));
+  root.querySelectorAll("tr.krow").forEach(tr => {
+    const toggle = () => {
+      const c = tr.dataset.code;
+      if (openKpis.has(c)) openKpis.delete(c); else openKpis.add(c);
+      renderAll();
+    };
+    tr.addEventListener("click", toggle);
+    tr.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+  });
+  return list.length;
+}
+
+/* ── dept view ── */
+function renderDept() {
+  const root = document.getElementById("view-dept");
+  const ftasks = DATA.tasks.filter(taskMatchBase);   /* 부서별 뷰: 부서 필터 제외, 전략·검색·특성화만 적용 */
+  const map = {};
+  ftasks.forEach(t => {
+    if (!map[t.책임부서]) map[t.책임부서] = { total: 0, byGoal: {}, kpi: 0, tasks: [] };
+    map[t.책임부서].total++;
+    map[t.책임부서].byGoal[t.goal_id] = (map[t.책임부서].byGoal[t.goal_id] || 0) + 1;
+    map[t.책임부서].kpi += (t.kpi_codes || []).length;
+    map[t.책임부서].tasks.push(t);
+  });
+  const entries = Object.entries(map).sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0], "ko"));
+  if (!entries.length) { root.innerHTML = `<div class="empty">조건에 맞는 부서가 없습니다.</div>`; return 0; }
+  const max = Math.max(...entries.map(([, v]) => v.total));
+  const legend = `<div class="legend">` + GOALS.map(g =>
+    `<span><span class="dot" style="background:${gc(g.id)}"></span>${g.id}. ${esc(g.name)}</span>`).join("") + `</div>`;
+  const bars = entries.map(([d, v]) => {
+    const segs = GOALS.map(g => {
+      const n = v.byGoal[g.id] || 0;
+      if (!n) return "";
+      const w = (n / max * 100).toFixed(2);
+      return `<span class="seg" style="width:${w}%;background:${gc(g.id)}" data-tip="${esc(d)} · ${g.id} ${esc(g.name)}: ${n}건"></span>`;
+    }).join("");
+    const open = openDepts.has(d);
+    const rel = ftasks.filter(t => (t.연관부서 || []).includes(d)).length;
+    const tlist = v.tasks.map(t =>
+      `<li><span class="b sid" style="--gc:${gc(t.goal_id)};--gc-bg:${gbg(t.goal_id)}">${esc(t.strategy_id)}</span>
+        <span class="b">${esc(t.code)}</span><span>${esc(t.name)}</span></li>`).join("");
+    return `<div class="deptrow${open ? " open" : ""}" data-dept="${esc(d)}">
+      <button class="dbar" data-dept="${esc(d)}" aria-expanded="${open ? "true" : "false"}"
+        title="클릭하면 이 부서의 책임 실행과제 목록을 펼칩니다">
+        <span class="dn">${esc(d)}<small>연계 KPI ${v.kpi}개</small></span>
+        <span class="track">${segs}</span>
+        <span class="tot">${v.total}</span>
+      </button>
+      <div class="dpanel">
+        <h4>책임 실행과제 ${v.total}건</h4>
+        <ul class="dtasks">${tlist}</ul>
+        <p class="drel">연관부서로 참여 ${rel}건</p>
+        <button class="gostrat" data-dept="${esc(d)}">이 부서로 필터해 전략체계 보기</button>
+      </div>
+    </div>`;
+  }).join("");
+  root.innerHTML = `${legend}<div class="deptgrid">${bars}</div>
+    <p class="dept-note">막대 = 책임부서 기준 실행과제 수(발전전략별 색 구분). 부서를 클릭하면 책임 실행과제 목록과 연관부서 참여 건수가 펼쳐집니다. 연관부서 참여는 막대 집계에서 제외.</p>`;
+  root.querySelectorAll(".dbar").forEach(b => b.addEventListener("click", () => {
+    const d = b.dataset.dept;
+    if (openDepts.has(d)) openDepts.delete(d); else openDepts.add(d);
+    renderAll();
+  }));
+  root.querySelectorAll(".gostrat").forEach(b => b.addEventListener("click", ev => {
+    ev.stopPropagation();
+    state.dept = b.dataset.dept;
+    document.getElementById("deptsel").value = state.dept;
+    document.getElementById("tab-strategy").click();
+  }));
+  return entries.length;
+}
+
+/* ── compare view: 대학알리미 주요지표 비교 (v4) ── */
+function fmt1(v) {
+  if (v === null || v === undefined || typeof v !== "number") return "–";
+  return (Math.round(v * 10) / 10).toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+const CMP_MODES = [
+  ["jc", "전문대학 내"],
+  ["all", "전체(4년제 포함)"],
+  ["univ", "4년제와 비교"]
+];
+function cmpSeries(ind) {
+  const g = y => ind.years[y];
+  const p = ind.priv ? "사립 " : "";
+  if (state.cmp === "jc") return [
+    { label: "연성대", col: "var(--g-A)", vals: CMP.years.map(y => g(y).jc.ysu), em: true },
+    { label: p + "전문대 평균", col: "var(--g-B)", vals: CMP.years.map(y => g(y).jc.mean) },
+    { label: p + "전문대 중앙값", col: "var(--g-D)", vals: CMP.years.map(y => g(y).jc.median) }
+  ];
+  if (state.cmp === "all") return [
+    { label: "연성대", col: "var(--g-A)", vals: CMP.years.map(y => g(y).jc.ysu), em: true },
+    { label: p + "전문대 평균", col: "var(--g-B)", vals: CMP.years.map(y => g(y).jc.mean) },
+    { label: p + "4년제 평균", col: "var(--g-D)", vals: CMP.years.map(y => g(y).un.mean) }
+  ];
+  return [
+    { label: "연성대", col: "var(--g-A)", vals: CMP.years.map(y => g(y).jc.ysu), em: true },
+    { label: p + "4년제 평균", col: "var(--g-B)", vals: CMP.years.map(y => g(y).un.mean) },
+    { label: p + "4년제 중앙값", col: "var(--g-D)", vals: CMP.years.map(y => g(y).un.median) }
+  ];
+}
+function cmpChart(ind, series) {
+  const W = 338, H = 132, L = 40, R = 232, T = 12, B = 110;
+  const nums = series.flatMap(s => s.vals).filter(v => typeof v === "number");
+  if (!nums.length) return `<div class="empty">–</div>`;
+  let lo = Math.min(...nums), hi = Math.max(...nums);
+  const pad = (hi - lo) * 0.12 || 1;
+  lo -= pad; hi += pad;
+  const x = i => L + i * (R - L) / (CMP.years.length - 1);
+  const y = v => B - (v - lo) * (B - T) / (hi - lo);
+  const grid = [0, 0.5, 1].map(f => {
+    const v = lo + (hi - lo) * f, yy = y(v).toFixed(1);
+    return `<line x1="${L}" x2="${R}" y1="${yy}" y2="${yy}" stroke="var(--line-soft)" stroke-width="1"></line>
+      <text x="${L - 5}" y="${(+yy) + 3.5}" text-anchor="end" font-size="9.5" fill="var(--ink-3)">${fmt1(v)}</text>`;
+  }).join("");
+  const xlab = CMP.years.map((yr, i) =>
+    `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--ink-3)">${yr}</text>`).join("");
+  const lines = series.map(s => {
+    let d = "", started = false;
+    s.vals.forEach((v, i) => {
+      if (typeof v !== "number") { started = false; return; }
+      d += (started ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1) + " ";
+      started = true;
+    });
+    const pts = s.vals.map((v, i) => (typeof v !== "number") ? "" :
+      `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${s.em ? 3.6 : 2.8}" fill="${s.em ? s.col : "var(--card)"}"
+        stroke="${s.col}" stroke-width="1.8" data-tip="${esc(ind.name)} · ${esc(s.label)} · ${CMP.years[i]} 공시: ${fmt1(v)}%"></circle>`).join("");
+    let li = -1;
+    s.vals.forEach((v, i) => { if (typeof v === "number") li = i; });
+    const dl = li >= 0 ? `<text x="${R + 7}" y="${(y(s.vals[li]) + 3.5).toFixed(1)}" font-size="10"
+      font-weight="${s.em ? 700 : 500}" fill="${s.col}">${esc(s.label)}</text>` : "";
+    return `<path d="${d.trim()}" fill="none" stroke="${s.col}" stroke-width="${s.em ? 2.4 : 1.7}"
+      stroke-linecap="round" stroke-linejoin="round"${s.em ? "" : ` opacity=".85"`}></path>${pts}${dl}`;
+  }).join("");
+  return `<svg class="cmpsvg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(ind.name)} 3개년 비교">${grid}${xlab}${lines}</svg>`;
+}
+function cmpRankLine(ind) {
+  const Y = ind.years["2025"];
+  const sign = v => (v >= 0 ? "+" : "−") + fmt1(Math.abs(v));
+  const p = ind.priv ? "사립 " : "";
+  if (state.cmp === "jc") {
+    const j = Y.jc;
+    const badge = j.top5 ? `<span class="cmp-badge">TOP5 진입</span>` : "";
+    const diff = (typeof j.ysu === "number" && typeof j.b5 === "number")
+      ? `TOP5 경계 ${fmt1(j.b5)}, 현재 ${sign(j.ysu - j.b5)}p` : "";
+    return `<span>'25 공시: ${p}전문대학 <b>${j.N}개교 중 ${j.rank}위</b> (연성대 ${fmt1(j.ysu)}%)</span><span>${diff}</span>${badge}`;
+  }
+  if (state.cmp === "all") {
+    const a = Y.al, j = Y.jc;
+    const d = (typeof j.ysu === "number" && typeof a.mean === "number") ? `전체 평균 ${fmt1(a.mean)} 대비 ${sign(j.ysu - a.mean)}p` : "";
+    return `<span>'25 공시: 전체(${p}전문대+4년제) <b>${a.N}개교 중 ${a.rank}위</b> (연성대 ${fmt1(j.ysu)}%)</span><span>${d}</span>`;
+  }
+  const u = Y.un, j = Y.jc;
+  const d1 = `${p}4년제 ${u.N}개교 평균 ${fmt1(u.mean)} 대비 <b>${sign(j.ysu - u.mean)}p</b>`;
+  const d2 = `중앙값 ${fmt1(u.median)} 대비 ${sign(j.ysu - u.median)}p`;
+  return `<span>'25 공시: 연성대 ${fmt1(j.ysu)}% — ${d1}</span><span>${d2}</span>`;
+}
+function renderCompare() {
+  const root = document.getElementById("view-compare");
+  const modes = CMP_MODES.map(([k, l]) =>
+    `<button data-cmp="${k}" aria-pressed="${state.cmp === k}">${l}</button>`).join("");
+  const cards = CMP.indicators.map(ind => {
+    const series = cmpSeries(ind);
+    const legend = series.map(s =>
+      `<span><span class="dot" style="background:${s.col}"></span>${esc(s.label)}</span>`).join("");
+    let alt = "";
+    if (ind.alt) {
+      const a = ind.alt;
+      const seq = CMP.years.map(y => `'${String(y).slice(2)} ${fmt1(a.years[y].ysu)}`).join(" · ");
+      alt = `<p class="cmp-alt">병기 — 전임교원 확보율 ${esc(a.label)}: 연성대 ${seq} (전문대 ${a.years["2025"].N}개교 중 ${a.years["2025"].rank}위, '25)</p>`;
+    }
+    return `<div class="cmpcard">
+      <h3>${esc(ind.name)}</h3>
+      <p class="csrc">${esc(ind.srcLabel || ("알리미: " + ind.src))}</p>
+      ${cmpChart(ind, series)}
+      <div class="cmp-legend">${legend}</div>
+      <div class="cmp-rank">${cmpRankLine(ind)}</div>
+      ${alt}
+    </div>`;
+  }).join("");
+  root.innerHTML = `
+    <div class="cmp-head">
+      <span class="cmp-note"><b>「연성 VISION 2027」 비전목표 — 주요지표 값 전국 전문대학 TOP5 진입</b> · 8대 주요지표 중 공시 대응이 확정된 5개 (교육비환원율·장학금지급률은 대학재정알리미 공시값 — 사립대 기준)</span>
+      <div class="cmp-modes" role="group" aria-label="비교 대상">${modes}</div>
+    </div>
+    <div class="cmpgrid">${cards}</div>`;
+  root.querySelectorAll(".cmp-modes button").forEach(b => b.addEventListener("click", () => {
+    state.cmp = b.dataset.cmp;
+    renderAll();
+  }));
+  return CMP.indicators.length;
+}
+
+/* ── eval view (v8, 척도·필드명 v9 정정): 실행과제별 부서·IR센터 자체평가 입력 ──
+   ★ 저장 미구현. 입력값은 브라우저 메모리(evalState)에만 보관되며 새로고침 시 사라진다.
+      탭 전환·필터 변경으로 재렌더해도 evalState에서 값을 복원한다. 저장 방식은 추후 결정.
+   ★ v9: 척도·필드명을 연성대 실제 양식(부서자체평가보고서_기획처v4.6.hwp, 실행과제 있는 부서용)
+      원문 표기로 교체. v8의 S/A/B/C/D는 출처 없는 임의 척도였으므로 폐기. */
+const EVAL_YEARS = ["2025", "2026", "2027"];
+const EVAL_SCALE_DEPT = ["미흡", "보통", "우수"];   /* 부서 자체점검 척도(원문) */
+const EVAL_SCALE_IR = ["우수", "보통", "미흡"];     /* IR센터 평가 척도(원문, 기본값 보통) */
+/* 실제 부서자체평가·IR 메타평가 양식이 확정되면 아래 상수의 라벨만 교체하면 된다
+   (라벨을 HTML/렌더 코드에 하드코딩하지 않음). def = 기본 선택값. */
+const EVAL_SECTIONS = [
+  {
+    id: "dept", no: "②", title: "부서 자체평가", who: "책임부서 작성",
+    fields: [
+      { key: "achv",  label: "추진실적 요약",              type: "textarea", wide: true, ph: "해당 연도 주요 추진실적을 요약합니다." },
+      { key: "anal",  label: "부서 자체분석 및 개선 방향",  type: "textarea", wide: true, ph: "목표 대비 달성 수준과 그 원인, 개선 방향을 분석합니다." },
+      { key: "grade", label: "자체점검",                   type: "select", opts: EVAL_SCALE_DEPT },
+      { key: "impr",  label: "개선·환류 사항",             type: "textarea", wide: true, ph: "미흡 사항에 대한 개선·환류 사항을 기술합니다." }
+    ]
+  },
+  {
+    id: "ir", no: "③", title: "IR센터 자체평가", who: "IR센터 작성",
+    fields: [
+      { key: "grade", label: "IR센터 평가",             type: "select", opts: EVAL_SCALE_IR, def: "보통" },
+      { key: "etc",   label: "기타 의견 및 환류 사항",   type: "textarea", wide: true, ph: "IR센터 평가 의견과 환류 사항을 기술합니다." }
+    ]
+  }
+];
+const EVAL_FIELDS = {};
+EVAL_SECTIONS.forEach(s => { EVAL_FIELDS[s.id] = s.fields; });
+const EVAL_FIELD_TOTAL = EVAL_SECTIONS.reduce((a, s) => a + s.fields.length, 0);
+const evalState = {};          /* evalState[연도][실행과제코드] = { dept:{}, ir:{}, kpi:{} } */
+const openEvals = new Set();   /* 펼쳐진 카드(실행과제 코드) — 재렌더 후에도 유지 */
+
+function evalRec(code, year) {
+  const y = year || state.evalYear;
+  if (!evalState[y]) evalState[y] = {};
+  if (!evalState[y][code]) {
+    const rec = { dept: {}, ir: {}, kpi: {} };
+    EVAL_SECTIONS.forEach(s => s.fields.forEach(f => { if (f.def) rec[s.id][f.key] = f.def; }));
+    evalState[y][code] = rec;
+  }
+  return evalState[y][code];
+}
+function evalVal(code, sec, key) {
+  const v = evalRec(code)[sec][key];
+  return (v === null || v === undefined) ? "" : String(v);
+}
+function evalFilled(code) {
+  const r = evalRec(code);
+  let n = 0;
+  EVAL_SECTIONS.forEach(s => s.fields.forEach(f => {
+    const v = String(r[s.id][f.key] || "").trim();
+    if (v !== "" && v !== (f.def || "")) n++;   /* 기본 선택값(IR 보통)은 '작성'으로 세지 않음 */
+  }));
+  return n;
+}
+/* 작성 완료 기준: 부서 자체점검 + IR센터 평가 등급이 모두 선택되고, 부서·IR 각각 서술 1개 이상 작성.
+   미작성 = 평가 필드·KPI 실적값 어느 것도 입력되지 않은 상태(기본 선택값만 있는 상태 포함). 그 외는 부분작성. */
+function evalStatus(code) {
+  const r = evalRec(code);
+  const hasText = sec => EVAL_FIELDS[sec].some(f =>
+    f.type === "textarea" && String(r[sec][f.key] || "").trim() !== "");
+  if (String(r.dept.grade || "") !== "" && String(r.ir.grade || "") !== "" && hasText("dept") && hasText("ir")) return "done";
+  const anyKpi = Object.keys(r.kpi).some(k => String(r.kpi[k] || "").trim() !== "");
+  return (evalFilled(code) > 0 || anyKpi) ? "part" : "none";
+}
+/* 달성률(%) = 실적 ÷ 목표 × 100. 목표 공란(null)·0 또는 실적 미입력이면 null → 화면에 "–" */
+function evalRate(actual, target) {
+  const s = String(actual === null || actual === undefined ? "" : actual).trim();
+  if (s === "") return null;
+  const a = parseFloat(s);
+  if (!isFinite(a)) return null;
+  if (typeof target !== "number" || !isFinite(target) || target === 0) return null;
+  return a / target * 100;
+}
+function evalSummaryInner(list) {
+  let done = 0, part = 0;
+  list.forEach(t => { const s = evalStatus(t.code); if (s === "done") done++; else if (s === "part") part++; });
+  const none = list.length - done - part;
+  return `<span>실행과제 <b>${list.length}</b>건</span>` +
+    `<span class="sdone">작성 완료 <b>${done}</b>건</span>` +
+    `<span class="spart">부분작성 <b>${part}</b>건</span>` +
+    `<span class="snone">미작성 <b>${none}</b>건</span>`;
+}
+function evalProgHtml(code) {
+  const st = evalStatus(code);
+  const cls = st === "done" ? " p-done" : (st === "part" ? " p-part" : "");
+  return `<span class="evprog${cls}">${evalFilled(code)}/${EVAL_FIELD_TOTAL} 작성</span>`;
+}
+function autoGrow(el) {
+  if (!el || el.offsetParent === null) return;   /* 접힌 카드는 scrollHeight가 0이라 건너뜀 */
+  el.style.height = "auto";
+  el.style.height = (el.scrollHeight + 2) + "px";
+}
+function evalFieldHtml(code, secId, f) {
+  const v = evalVal(code, secId, f.key);
+  const id = `ev-${secId}-${f.key}-${code}`;
+  /* data-year: 렌더 시점 연도를 필드에 고정 — 연도 전환 직후 지연 발생하는 change 이벤트가
+     다른 연도 레코드를 덮어쓰는 것을 방지 */
+  const common = `data-ev="f" data-code="${esc(code)}" data-sec="${secId}" data-key="${f.key}" data-year="${esc(state.evalYear)}"`;
+  if (f.type === "select") {
+    const opts = [`<option value=""${v === "" ? " selected" : ""}>미선택</option>`].concat((f.opts || []).map(o =>
+      `<option value="${esc(o)}"${v === o ? " selected" : ""}>${esc(o)}</option>`)).join("");
+    return `<div class="evf"><label for="${esc(id)}">${esc(f.label)}</label>
+      <select id="${esc(id)}" ${common}>${opts}</select>
+      <div class="ev-print">${esc(v)}</div></div>`;
+  }
+  return `<div class="evf${f.wide ? " wide" : ""}"><label for="${esc(id)}">${esc(f.label)}</label>
+    <textarea id="${esc(id)}" rows="3" ${common} placeholder="${esc(f.ph || "")}">${esc(v)}</textarea>
+    <div class="ev-print">${esc(v)}</div></div>`;
+}
+function evalKpiHtml(t, y) {
+  const kpis = (t.kpi_codes || []).map(c => kpiByCode[c]).filter(Boolean);
+  if (!kpis.length) return `<p class="ev-nokpi">연계 KPI 없음</p>`;
+  const rows = kpis.map(k => {
+    const tgt = k.targets ? k.targets[y] : null;
+    const av = evalRec(t.code).kpi[k.code];
+    const r = evalRate(av, tgt);
+    const u = k.unit ? esc(k.unit) : "";
+    return `<tr>
+      <td><span class="kc" style="color:${gc(t.goal_id)}">${esc(k.code)}</span></td>
+      <td>${esc(k.name)}</td>
+      <td><span class="unit">${esc(k.unit || "")}</span></td>
+      <td class="num">${fmt(k.baseline)}</td>
+      <td class="num">${fmt(tgt)}</td>
+      <td class="num"><input class="ev-num" type="number" step="any" inputmode="decimal"
+        value="${esc(av === undefined || av === null ? "" : av)}" data-ev="kpi"
+        data-code="${esc(t.code)}" data-kpi="${esc(k.code)}" data-year="${esc(y)}"
+        aria-label="${esc(k.code)} ${esc(k.name)} ${y} 실적값"><span class="ev-print pnum">${esc(av === undefined || av === null ? "" : av)}</span></td>
+      <td class="num"><span class="ev-rate${(r !== null && r >= 100) ? " hit" : ""}">${r === null ? "–" : fmt1(r) + "%"}</span></td>
+    </tr>`;
+  }).join("");
+  return `<div class="evkpiwrap"><table class="evkpi"><thead><tr>
+      <th>코드</th><th>지표명</th><th>단위</th>
+      <th class="num">기준값</th><th class="num">'${y.slice(2)} 목표</th>
+      <th class="num">실적값</th><th class="num">달성률</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function renderEval() {
+  const root = document.getElementById("view-eval");
+  const y = state.evalYear;
+  const list = DATA.tasks.filter(taskMatch);
+  const head = `<div class="ev-top">
+    <div class="ev-summary" id="evsum">${evalSummaryInner(list)}</div>
+    <div class="ev-hint">${esc(y)}학년도 평가 · 입력 내용은 화면에서만 유지됩니다 — 저장 방식 협의 중</div>
+  </div>`;
+  if (!list.length) {
+    root.innerHTML = head + `<div class="empty">조건에 맞는 실행과제가 없습니다.</div>`;
+    return 0;
+  }
+  const cards = list.map(t => {
+    const g = t.goal_id;
+    const s = stratById[t.strategy_id];
+    const open = openEvals.has(t.code);
+    const subs = (t.subtasks || []).map(st =>
+      `<li>${esc(st.name)}<span class="scode">${esc(st.code)}</span></li>`).join("");
+    const rel = (t.연관부서 && t.연관부서.length)
+      ? `<span class="b">연관: ${t.연관부서.map(esc).join(", ")}</span>` : "";
+    const secs = EVAL_SECTIONS.map(sec =>
+      `<div class="evsec s-${sec.id}" style="--gc:${gc(g)}">
+        <h4>${sec.no} ${esc(sec.title)}<span class="who">${esc(sec.who)}</span></h4>
+        <div class="evfields">${sec.fields.map(f => evalFieldHtml(t.code, sec.id, f)).join("")}</div>
+      </div>`).join("");
+    return `<div class="evcard${open ? " open" : ""}" data-code="${esc(t.code)}" style="--gc:${gc(g)}">
+      <button class="evhead" aria-expanded="${open ? "true" : "false"}"
+        title="클릭하면 자체평가 입력 폼을 펼칩니다">
+        <span class="caret">▶</span>
+        <span>
+          <span class="evname">${esc(t.name)}</span>
+          <span class="badges">
+            <span class="b dept" style="--gc-bg:${gbg(g)}">${esc(t.책임부서)}</span>
+            <span class="b">${esc(t.code)}</span>
+            <span class="b sid" style="--gc:${gc(g)};--gc-bg:${gbg(g)}">${esc(t.strategy_id)}${s ? " " + esc(s.name) : ""}</span>
+            ${t.특성화연계 ? `<span class="b spec">특성화 연계</span>` : ""}
+            ${rel}
+          </span>
+        </span>
+        ${evalProgHtml(t.code)}
+      </button>
+      <div class="evbody">
+        ${subs ? `<div class="evsec"><h4>세부 TASK <span class="who">참고</span></h4><ul class="ev-subs">${subs}</ul></div>` : ""}
+        <div class="evsec">
+          <h4>① 성과지표 달성값<span class="who">${esc(y)}학년도 목표 대비</span></h4>
+          ${evalKpiHtml(t, y)}
+        </div>
+        ${secs}
+      </div>
+    </div>`;
+  }).join("");
+  root.innerHTML = head + `<div class="evgrid">${cards}</div>`;
+  root.querySelectorAll(".evhead").forEach(b => b.addEventListener("click", () => {
+    const card = b.closest(".evcard"), c = card.dataset.code;
+    const open = card.classList.toggle("open");
+    b.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) { openEvals.add(c); card.querySelectorAll("textarea").forEach(autoGrow); }
+    else openEvals.delete(c);
+  }));
+  /* 입력 시 전체 재렌더를 하지 않는다(포커스·커서 보존). evalState 갱신 후 관련 표시만 부분 갱신. */
+  root.querySelectorAll("[data-ev='f']").forEach(el => {
+    const onEdit = () => {
+      if (!el.isConnected) return;   /* 재렌더로 떨어져 나간 낡은 입력칸의 지연 이벤트는 무시 */
+      evalRec(el.dataset.code, el.dataset.year)[el.dataset.sec][el.dataset.key] = el.value;
+      const mirror = el.parentElement.querySelector(".ev-print");
+      if (mirror) mirror.textContent = el.value;
+      if (el.tagName === "TEXTAREA") autoGrow(el);
+      refreshEvalMeta(el.dataset.code);
+    };
+    el.addEventListener("input", onEdit);
+    el.addEventListener("change", onEdit);
+  });
+  root.querySelectorAll("[data-ev='kpi']").forEach(el => {
+    const onEdit = () => {
+      if (!el.isConnected) return;
+      evalRec(el.dataset.code, el.dataset.year).kpi[el.dataset.kpi] = el.value;
+      const k = kpiByCode[el.dataset.kpi];
+      const tgt = (k && k.targets) ? k.targets[el.dataset.year] : null;
+      const r = evalRate(el.value, tgt);
+      const cell = el.closest("tr").querySelector(".ev-rate");
+      if (cell) {
+        cell.textContent = r === null ? "–" : fmt1(r) + "%";
+        cell.classList.toggle("hit", r !== null && r >= 100);
+      }
+      const mirror = el.parentElement.querySelector(".ev-print");
+      if (mirror) mirror.textContent = el.value;
+      refreshEvalMeta(el.dataset.code);
+    };
+    el.addEventListener("input", onEdit);
+    el.addEventListener("change", onEdit);
+  });
+  root.querySelectorAll(".evcard.open textarea").forEach(autoGrow);
+  return list.length;
+}
+function refreshEvalMeta(code) {
+  const card = document.querySelector(`#view-eval .evcard[data-code="${code}"]`);
+  if (card) {
+    const p = card.querySelector(".evprog");
+    if (p) {
+      const st = evalStatus(code);
+      p.textContent = `${evalFilled(code)}/${EVAL_FIELD_TOTAL} 작성`;
+      p.className = "evprog" + (st === "done" ? " p-done" : (st === "part" ? " p-part" : ""));
+    }
+  }
+  const bar = document.getElementById("evsum");
+  if (bar) bar.innerHTML = evalSummaryInner(DATA.tasks.filter(taskMatch));
+}
+
+/* ── tooltip ── */
+const tip = document.getElementById("tip");
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.style.display = "block";
+  const pad = 14;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  const r = tip.getBoundingClientRect();
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - pad;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - pad;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+document.addEventListener("mousemove", ev => {
+  const el = ev.target;
+  if (el.classList && el.classList.contains("pt")) {
+    const k = kpiByCode[el.dataset.k];
+    if (!k) return hideTip();
+    const rows = YEARS.map(y => {
+      const v = k.targets ? k.targets[y] : null;
+      const mark = y === el.dataset.y ? " ◀" : "";
+      return `${y}: ${fmt(v)}${v !== null && v !== undefined ? (k.unit || "") : ""}${mark}`;
+    }).join("<br>");
+    showTip(`<b>${esc(k.code)} ${esc(k.name)}</b><br>기준값 ${fmt(k.baseline)}${k.unit ? esc(k.unit) : ""}${k.baseline_ref ? " (" + esc(k.baseline_ref) + ")" : ""}<div class="rows">${rows}</div>`, ev);
+  } else if (el.dataset && el.dataset.tip) {
+    showTip(esc(el.dataset.tip), ev);
+  } else hideTip();
+});
+
+/* ── orchestration ── */
+function renderAll() {
+  let n = 0, label = "";
+  if (state.view === "strategy") { n = renderStrategy(); label = `실행과제 ${n}건 표시`; }
+  else if (state.view === "kpi") { n = renderKpi(); label = `KPI ${n}개 표시`; }
+  else if (state.view === "compare") { n = renderCompare(); label = `주요지표 ${n}개 비교 (대학알리미)`; }
+  else if (state.view === "eval") { n = renderEval(); label = `자체평가 대상 실행과제 ${n}건 (${state.evalYear}학년도)`; }
+  else { n = renderDept(); label = `책임부서 ${n}개 표시`; }
+  document.getElementById("evyearwrap").classList.toggle("hidden", state.view !== "eval");
+  const f = [];
+  if (state.goal) { const g = GOALS.find(x => x.id === state.goal); f.push(`전략 ${state.goal}. ${g ? g.name : ""}`); }
+  if (state.spec) f.push("특성화 연계만");
+  if (state.dept) f.push(`책임부서 = ${state.dept}`);
+  if (state.q) f.push(`검색 "${state.q}"`);
+  document.getElementById("countnote").textContent = label + (f.length ? " · 필터: " + f.join(" / ") : " · 전체");
+}
+renderStats(); renderVision(); renderChips(); initControls(); renderAll();

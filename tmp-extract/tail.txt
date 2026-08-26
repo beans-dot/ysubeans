@@ -1,0 +1,64 @@
+</script>
+
+프로젝트 개요
+기존 단일 HTML/JS로 구성된 「연성 VISION 2027 대시보드」를 Next.js(프론트엔드), Nest.js(백엔드), PostgreSQL(데이터베이스) 기반의 동적 웹 애플리케이션으로 재구축합니다. 기존 하드코딩된 JSON 데이터를 관계형 데이터베이스로 완전히 구조화하며, 엑셀 업로드 없이 관리자 화면에서 발전계획 세부 구성을 직접 CRUD(생성/조회/수정/삭제) 할 수 있는 백오피스를 포함해야 합니다.
+
+1. 기술 스택
+
+Frontend: Next.js (App Router), TypeScript, Tailwind CSS, 상태 관리(Zustand 또는 Context API), 차트 라이브러리(기존 SVG 스파크라인 로직 이식 또는 Recharts)
+
+Backend: Nest.js, TypeScript, TypeORM (또는 Prisma)
+
+Database: PostgreSQL
+
+2. 데이터베이스(PostgreSQL) ERD 설계 요구사항
+중장기발전계획의 계층 구조가 변경되더라도 유연하게 대응할 수 있도록 다음의 정규화된 테이블 구조를 생성하십시오.
+
+Vision (비전 체계): 단일 레코드로 건학이념, 교훈, 사명, 인재상, 비전목표 관리
+
+Goal (발전전략): id (PK, 예: A), no, name
+
+Strategy (전략과제): id (PK, 예: A1), goal_id (FK), name
+
+Task (실행과제): code (PK, 예: A11-혁신), strategy_id (FK), goal_id (FK), name, is_specialized (특성화연계 여부, Boolean), primary_dept (책임부서), related_depts (연관부서, JSONB 배열로 저장)
+
+Subtask (세부과제): id (PK), task_code (FK), code, name
+
+Kpi (성과지표): code (PK), task_code (FK), strategy_id (FK), goal_id (FK), name, unit, baseline (기준값, Numeric), baseline_ref (기준값 참조 설명), formula (산출식), source
+
+Kpi_Target (연도별 목표치): kpi_code (FK), year (예: 2024), target_value (Numeric) - KPI 당 다수의 연도별 목표를 가지므로 별도 테이블 분리
+
+Kpi_Result (연도별 실적값): kpi_code (FK), year, actual_value (Numeric)
+
+Evaluation (부서별 자체평가): task_code (FK), year, dept_summary, dept_analysis, dept_grade, dept_improvement, ir_grade, ir_feedback
+
+Compare_Data (대학정보공시 비교 데이터): 유연성을 위해 항목(emp, enr 등)과 연도, 대학별 값(자사, 전문대 평균 등)을 JSONB 형태로 저장하거나 개별 지표별 EAV(Entity-Attribute-Value) 모델 적용
+
+3. 백엔드 (Nest.js) API 개발 요구사항
+
+계층형 데이터 조회 API: 프론트엔드의 대시보드 렌더링을 위해 Goal -> Strategy -> Task -> Subtask 및 KPI 구조를 조인(Join)하여 하나의 트리 구조 JSON으로 반환하는 엔드포인트 구현.
+
+관리자 CRUD API: 모든 테이블(Goal ~ Evaluation)에 대한 RESTful API (GET, POST, PUT, DELETE) 구현. 데이터 수정 시 무결성을 검증하는 DTO 및 Validation Pipe 적용.
+
+4. 프론트엔드 (Next.js) - 사용자 대시보드 요구사항
+
+기존 UI/UX(다크/라이트 테마, 탭 레이아웃, 필터링)를 React 컴포넌트로 분리하여 구현.
+
+상태 필터링: 발전전략 버튼, 특성화 연계 토글, 책임부서 드롭다운, 검색창 입력을 전역 상태로 관리하여 하위 5개 뷰(전략체계, KPI 75, 부서별, 주요지표 비교, 자체평가)가 즉각적으로 필터링되도록 처리.
+
+동적 렌더링: KPI 스파크라인 차트와 진척도 배지는 백엔드에서 받아온 Kpi_Target 및 Kpi_Result 데이터를 기반으로 동적 렌더링.
+
+5. 프론트엔드 (Next.js) - 관리자 백오피스 요구사항
+
+경로: /admin/* 라우팅 생성.
+
+엑셀 업로드 배제: 모든 데이터는 웹 폼(Form)과 데이터 그리드(Data Grid) 테이블을 통해 직접 입력 및 수정.
+
+체계 관리 화면: 발전전략, 전략과제, 실행과제를 계층적으로 추가/수정/삭제할 수 있는 UI. 실행과제 추가 시 책임부서, 연관부서, 특성화 여부를 선택하는 폼 제공.
+
+목표 및 실적 관리 화면: KPI 리스트를 조회하고, 특정 연도를 선택하여 목표치(target_value)와 실적치(actual_value)를 인라인(Inline)으로 바로 수정하고 저장(PUT)할 수 있는 스프레드시트 형태의 UI 제공.
+
+자체평가 관리 화면: 평가 연도를 설정하고, 실행과제별 부서평가 및 IR센터 평가 내용을 텍스트 에어리어와 드롭다운으로 직접 입력하여 DB에 영구 저장되도록 연동.
+
+현재 json으로 코딩되어있는 중장기발전계획 및 담당부서 내용은 정리된 내용이 맞으므로 해당 내용을 우선 삽입해두도록 함
+</user_query>
