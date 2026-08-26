@@ -1,9 +1,9 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, MoreHorizontal, Plus, Search } from 'lucide-react';
-import { IR_WORK_SAVE_EVENT, notifyAutoSaved } from '@/components/admin/AutoSaveToast';
-import { Badge } from '@/components/ui/badge';
+import { ChevronRight, Plus, Search } from 'lucide-react';
+import { notifyAutoSaved } from '@/components/admin/AutoSaveToast';
+import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -73,6 +73,29 @@ function ValueCell({
   );
 }
 
+function kpiLetter(kpi: SpKpi) {
+  const display = kpi.displayCode ?? kpi.kpiCode;
+  const m = /([a-z])$/.exec(display);
+  return m?.[1] ?? kpi.suffix ?? 'a';
+}
+
+function kpiPrefix(kpi: SpKpi) {
+  return kpi.taskCode || (kpi.displayCode ?? kpi.kpiCode).replace(/[a-z]$/, '');
+}
+
+function nextLetter(task: SpTask, kpiByCode: Map<string, SpKpi>) {
+  const used = new Set(
+    task.kpiCodes.map((code) => {
+      const kpi = kpiByCode.get(code);
+      return kpi ? kpiLetter(kpi) : code.slice(-1);
+    }),
+  );
+  for (const ch of 'abcdefghijklmnopqrstuvwxyz') {
+    if (!used.has(ch)) return ch;
+  }
+  return 'a';
+}
+
 function KpiMetaEditor({
   kpi,
   years,
@@ -93,16 +116,56 @@ function KpiMetaEditor({
   const [baselineRef, setBaselineRef] = useState(kpi.baselineRef ?? '');
   const [formula, setFormula] = useState(kpi.formula ?? '');
   const [primaryDept, setPrimaryDept] = useState(kpi.primaryDept ?? '');
+  const [letter, setLetter] = useState(kpiLetter(kpi));
+  const [busy, setBusy] = useState(false);
+  const prefix = kpiPrefix(kpi);
 
-  const saveMeta = async (patch: Record<string, unknown>) => {
+  const saveMeta = async () => {
+    const nextLetter = letter.trim().toLowerCase();
+    if (nextLetter && !/^[a-z]$/.test(nextLetter)) {
+      alert('KPI 코드 소문자를 한 글자 입력해 주세요.');
+      return;
+    }
+    const parsed = parseValue(baseline);
+    if (parsed === undefined) {
+      alert('기준값을 숫자로 입력해 주세요.');
+      return;
+    }
+    setBusy(true);
     try {
-      await updateSpKpi(kpi.kpiCode, { ...patch, year: applyYear } as Parameters<
-        typeof updateSpKpi
-      >[1]);
+      await updateSpKpi(kpi.kpiCode, {
+        kpiName: kpiName.trim(),
+        unit,
+        primaryDept,
+        baseline: parsed,
+        baselineRef,
+        formula,
+        year: applyYear,
+        ...( /^[a-z]$/.test(nextLetter) ? { suffix: nextLetter } : {}),
+      });
       notifyAutoSaved();
       await reload();
     } catch (e) {
       alert(apiMessage(e, 'KPI 저장 실패'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const abolish = async () => {
+    const ok = window.confirm(
+      `${applyYear}학년도부터 ${kpi.displayCode ?? kpi.kpiCode}를 폐지할까요? 이후 코드는 소문자가 앞으로 당겨집니다.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await deleteSpKpi(kpi.kpiCode, applyYear);
+      notifyAutoSaved();
+      await reload();
+    } catch (e) {
+      alert(apiMessage(e, 'KPI 폐지 실패'));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -120,6 +183,27 @@ function KpiMetaEditor({
             </option>
           ))}
         </NativeSelect>
+        <p className="text-xs text-muted-foreground">
+          선택한 학년도 이전 조회는 기존 내용·코드를 유지합니다.
+        </p>
+      </div>
+      <div className="grid gap-1.5 sm:col-span-2">
+        <Label className="text-left" htmlFor={`kc-${kpi.kpiCode}`}>
+          코드 (앞자리 고정, 소문자만 변경)
+        </Label>
+        <div className="flex items-center gap-1">
+          <Input value={prefix} readOnly className="h-9 w-24" />
+          <Input
+            id={`kc-${kpi.kpiCode}`}
+            value={letter}
+            maxLength={1}
+            onChange={(e) =>
+              setLetter(e.target.value.replace(/[^a-zA-Z]/g, '').toLowerCase())
+            }
+            className="h-9 w-12 text-center font-bold"
+            aria-label="KPI 소문자 코드"
+          />
+        </div>
       </div>
       <div className="grid gap-1.5 sm:col-span-2">
         <Label className="text-left" htmlFor={`kn-${kpi.kpiCode}`}>
@@ -129,10 +213,6 @@ function KpiMetaEditor({
           id={`kn-${kpi.kpiCode}`}
           value={kpiName}
           onChange={(e) => setKpiName(e.target.value)}
-          onBlur={() => {
-            if (kpiName.trim() === kpi.kpiName) return;
-            void saveMeta({ kpiName: kpiName.trim() });
-          }}
           className="h-9"
         />
       </div>
@@ -144,10 +224,6 @@ function KpiMetaEditor({
           id={`ku-${kpi.kpiCode}`}
           value={unit}
           onChange={(e) => setUnit(e.target.value)}
-          onBlur={() => {
-            if (unit === (kpi.unit ?? '')) return;
-            void saveMeta({ unit });
-          }}
           className="h-9"
         />
       </div>
@@ -158,10 +234,7 @@ function KpiMetaEditor({
         <NativeSelect
           id={`kd-${kpi.kpiCode}`}
           value={primaryDept}
-          onChange={(e) => {
-            setPrimaryDept(e.target.value);
-            void saveMeta({ primaryDept: e.target.value });
-          }}
+          onChange={(e) => setPrimaryDept(e.target.value)}
         >
           <option value="">선택</option>
           {departments.map((d) => (
@@ -179,14 +252,6 @@ function KpiMetaEditor({
           id={`kb-${kpi.kpiCode}`}
           value={baseline}
           onChange={(e) => setBaseline(e.target.value)}
-          onBlur={() => {
-            const parsed = parseValue(baseline);
-            if (parsed === undefined) return;
-            if (parsed === kpi.baseline || (parsed === null && kpi.baseline === null)) {
-              return;
-            }
-            void saveMeta({ baseline: parsed });
-          }}
           inputMode="decimal"
           className="h-9 text-left"
         />
@@ -199,10 +264,6 @@ function KpiMetaEditor({
           id={`kbr-${kpi.kpiCode}`}
           value={baselineRef}
           onChange={(e) => setBaselineRef(e.target.value)}
-          onBlur={() => {
-            if (baselineRef === (kpi.baselineRef ?? '')) return;
-            void saveMeta({ baselineRef });
-          }}
           className="h-9"
         />
       </div>
@@ -214,10 +275,6 @@ function KpiMetaEditor({
           id={`kf-${kpi.kpiCode}`}
           value={formula}
           onChange={(e) => setFormula(e.target.value)}
-          onBlur={() => {
-            if (formula === (kpi.formula ?? '')) return;
-            void saveMeta({ formula });
-          }}
           className="min-h-[60px]"
         />
       </div>
@@ -237,6 +294,28 @@ function KpiMetaEditor({
           ))}
         </div>
       </div>
+      <div className="flex justify-end gap-1 sm:col-span-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+          disabled={busy}
+          onClick={() => void saveMeta()}
+        >
+          수정
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+          disabled={busy}
+          onClick={() => void abolish()}
+        >
+          폐지
+        </Button>
+      </div>
     </div>
   );
 }
@@ -255,9 +334,8 @@ export function PlanKpiManager({
   const [departments, setDepartments] = useState<SpDepartment[]>([]);
   const [busy, setBusy] = useState(false);
   const [createFor, setCreateFor] = useState<SpTask | null>(null);
-  const [abolish, setAbolish] = useState<SpKpi | null>(null);
   const [year, setYear] = useState(defaultYear);
-  const [kpiCode, setKpiCode] = useState('');
+  const [kpiLetterInput, setKpiLetterInput] = useState('a');
   const [kpiName, setKpiName] = useState('');
   const [unit, setUnit] = useState('');
   const [dept, setDept] = useState('');
@@ -267,14 +345,6 @@ export function PlanKpiManager({
       .then(setDepartments)
       .catch(() => setDepartments([]));
   }, []);
-
-  useEffect(() => {
-    const onSave = () => {
-      void reload().then(() => notifyAutoSaved());
-    };
-    window.addEventListener(IR_WORK_SAVE_EVENT, onSave);
-    return () => window.removeEventListener(IR_WORK_SAVE_EVENT, onSave);
-  }, [reload]);
 
   const kpiByCode = useMemo(
     () => new Map(tree.kpis.map((k) => [k.kpiCode, k])),
@@ -290,7 +360,7 @@ export function PlanKpiManager({
           .filter((k): k is SpKpi => Boolean(k))
           .filter((kpi) => {
             if (!q) return true;
-            return [kpi.kpiCode, kpi.kpiName, task.taskName, kpi.primaryDept ?? '']
+            return [kpi.kpiCode, kpi.displayCode ?? '', kpi.kpiName, task.taskName, kpi.primaryDept ?? '']
               .join(' ')
               .toLowerCase()
               .includes(q);
@@ -302,10 +372,15 @@ export function PlanKpiManager({
 
   const submitCreate = async () => {
     if (!createFor) return;
+    const letter = kpiLetterInput.trim().toLowerCase();
+    if (!/^[a-z]$/.test(letter)) {
+      alert('KPI 코드 소문자를 한 글자 입력해 주세요.');
+      return;
+    }
     setBusy(true);
     try {
       await createSpKpi({
-        kpiCode: kpiCode.trim(),
+        kpiCode: `${createFor.taskCode}${letter}`,
         kpiName: kpiName.trim(),
         taskCode: createFor.taskCode,
         unit: unit.trim() || undefined,
@@ -322,21 +397,6 @@ export function PlanKpiManager({
     }
   };
 
-  const submitAbolish = async () => {
-    if (!abolish) return;
-    setBusy(true);
-    try {
-      await deleteSpKpi(abolish.kpiCode, year);
-      setAbolish(null);
-      await reload();
-      notifyAutoSaved();
-    } catch (e) {
-      alert(apiMessage(e, 'KPI 폐지 실패'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -344,8 +404,8 @@ export function PlanKpiManager({
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          실행과제 단위로 묶입니다. 지표를 누르면 기준값과 2022~2027 목표를 관리합니다.
-          칸을 벗어나면 자동 저장됩니다.
+          실행과제 단위로 묶입니다. 코드 옆 &#39;&gt;&#39;를 눌러 내용을 고친 뒤
+          수정을 누르면 저장됩니다. 연도별 목표값은 칸을 벗어나면 저장됩니다.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1">
@@ -364,7 +424,7 @@ export function PlanKpiManager({
             <section key={task.taskCode} className="rounded-md border">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2">
                 <h3 className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-bold">
-                  <Badge variant="code">{task.displayCode ?? task.taskCode}</Badge>
+                  <SpCodeBadge level="task">{task.displayCode ?? task.taskCode}</SpCodeBadge>
                   <span>{task.taskName}</span>
                 </h3>
                 <Button
@@ -374,7 +434,7 @@ export function PlanKpiManager({
                   onClick={() => {
                     setCreateFor(task);
                     setYear(defaultYear);
-                    setKpiCode(`${task.taskCode}a`);
+                    setKpiLetterInput(nextLetter(task, kpiByCode));
                     setKpiName('');
                     setUnit('');
                     setDept(task.primaryDept ?? '');
@@ -391,7 +451,6 @@ export function PlanKpiManager({
                       <th className="px-2 py-2 text-left font-bold">지표명</th>
                       <th className="px-2 py-2 text-left font-bold">담당부서</th>
                       <th className="px-2 py-2 text-left font-bold">기준값</th>
-                      <th className="px-2 py-2 text-left font-bold"> </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -415,9 +474,9 @@ export function PlanKpiManager({
                                     open && 'rotate-90',
                                   )}
                                 />
-                                <Badge variant="code">
+                                <SpCodeBadge level="kpi">
                                   {kpi.displayCode ?? kpi.kpiCode}
-                                </Badge>
+                                </SpCodeBadge>
                               </button>
                             </td>
                             <td className="px-2 py-1.5 text-left">
@@ -434,24 +493,10 @@ export function PlanKpiManager({
                             <td className="px-2 py-1.5 text-left tabular-nums">
                               {kpi.baseline ?? '–'}
                             </td>
-                            <td className="px-2 py-1.5 text-left">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 px-2"
-                                onClick={() => {
-                                  setAbolish(kpi);
-                                  setYear(defaultYear);
-                                }}
-                                title="폐지"
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </td>
                           </tr>
                           {open && (
                             <tr className="border-b">
-                              <td colSpan={5} className="p-0">
+                              <td colSpan={4} className="p-0">
                                 <KpiMetaEditor
                                   kpi={kpi}
                                   years={years}
@@ -467,7 +512,7 @@ export function PlanKpiManager({
                     {kpis.length === 0 && (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={4}
                           className="px-3 py-4 text-center text-sm text-muted-foreground"
                         >
                           이 실행과제에 KPI가 없습니다.
@@ -492,12 +537,21 @@ export function PlanKpiManager({
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid gap-1.5">
-              <Label className="text-left">코드</Label>
-              <Input
-                value={kpiCode}
-                onChange={(e) => setKpiCode(e.target.value)}
-                className="h-9 font-mono"
-              />
+              <Label className="text-left">코드 (앞자리 고정)</Label>
+              <div className="flex items-center gap-1">
+                <Input value={createFor?.taskCode ?? ''} readOnly className="h-9 w-24" />
+                <Input
+                  value={kpiLetterInput}
+                  maxLength={1}
+                  onChange={(e) =>
+                    setKpiLetterInput(
+                      e.target.value.replace(/[^a-zA-Z]/g, '').toLowerCase(),
+                    )
+                  }
+                  className="h-9 w-12 text-center font-bold"
+                  aria-label="KPI 소문자 코드"
+                />
+              </div>
             </div>
             <div className="grid gap-1.5">
               <Label className="text-left">지표명</Label>
@@ -542,45 +596,6 @@ export function PlanKpiManager({
             </Button>
             <Button disabled={busy} onClick={() => void submitCreate()}>
               저장
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!abolish} onOpenChange={(v) => !v && setAbolish(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>KPI 폐지</DialogTitle>
-            <DialogDescription>
-              폐지 학년도 이전 조회는 기존 KPI를 유지합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <p className="text-sm">
-            {abolish?.displayCode ?? abolish?.kpiCode} {abolish?.kpiName}
-          </p>
-          <div className="grid gap-1.5">
-            <Label className="text-left">폐지 학년도</Label>
-            <NativeSelect
-              value={String(year)}
-              onChange={(e) => setYear(Number(e.target.value))}
-            >
-              {years.map((y) => (
-                <option key={y} value={String(y)}>
-                  {y}학년도부터
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAbolish(null)}>
-              취소
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={busy}
-              onClick={() => void submitAbolish()}
-            >
-              폐지
             </Button>
           </DialogFooter>
         </DialogContent>

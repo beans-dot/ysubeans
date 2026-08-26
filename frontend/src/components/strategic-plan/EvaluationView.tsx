@@ -2,6 +2,7 @@
 
 import { memo, useState, type ReactNode } from 'react';
 import { ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -122,7 +123,7 @@ function EvalKpiRow({
   return (
     <tr className="border-b last:border-b-0">
       <td className="px-2 py-1.5">
-        <Badge variant="code">{kpi.displayCode ?? kpi.kpiCode}</Badge>
+        <SpCodeBadge level="kpi">{kpi.displayCode ?? kpi.kpiCode}</SpCodeBadge>
       </td>
       <td className="px-2 py-1.5">{kpi.kpiName}</td>
       <td className="px-2 py-1.5 text-muted-foreground">{kpi.unit ?? ''}</td>
@@ -468,9 +469,9 @@ const EvaluationCard = memo(function EvaluationCard({
                       unitCode={unit.code}
                       title={
                         <>
-                          <Badge variant="code">
+                          <SpCodeBadge level="subtask">
                             {unit.displayCode ?? unit.code}
-                          </Badge>
+                          </SpCodeBadge>
                           <span className="ml-2 font-normal">{unit.name}</span>
                         </>
                       }

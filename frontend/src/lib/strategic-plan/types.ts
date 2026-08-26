@@ -44,6 +44,7 @@ export type SpYearValues = Record<number, number | null>;
 export interface SpKpi {
   kpiCode: string;
   displayCode?: string;
+  suffix?: string;
   kpiName: string;
   unit: string | null;
   taskCode: string | null;

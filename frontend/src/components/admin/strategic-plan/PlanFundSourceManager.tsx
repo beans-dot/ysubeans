@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react';
-import { IR_WORK_SAVE_EVENT, notifyAutoSaved } from '@/components/admin/AutoSaveToast';
+import { notifyAutoSaved } from '@/components/admin/AutoSaveToast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -54,15 +54,6 @@ export function PlanFundSourceManager() {
         setYear(tree.years[tree.years.length - 1] ?? 2025);
       })
       .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    const onSave = () => {
-      load();
-      notifyAutoSaved();
-    };
-    window.addEventListener(IR_WORK_SAVE_EVENT, onSave);
-    return () => window.removeEventListener(IR_WORK_SAVE_EVENT, onSave);
   }, []);
 
   const submitPending = async () => {

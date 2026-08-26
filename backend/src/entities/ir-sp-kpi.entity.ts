@@ -1,7 +1,7 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 import { numericTransformer } from './numeric.transformer';
 
-/** 성과지표(KPI). kpi_code는 안정·표시 코드(A11a). */
+/** 성과지표(KPI). kpi_code는 최초 부여한 안정 PK이며, 화면 코드는 suffix로 표시한다. */
 @Entity('ir_sp_kpi')
 export class IrSpKpi {
   @PrimaryColumn({ name: 'kpi_code', type: 'varchar', length: 30 })
@@ -47,6 +47,10 @@ export class IrSpKpi {
 
   @Column({ name: 'display_order', type: 'int', default: 0 })
   displayOrder: number;
+
+  /** 표시용 소문자. PK(kpi_code)는 최초 부여값을 유지한다. */
+  @Column({ name: 'suffix', type: 'varchar', length: 1, nullable: true })
+  suffix: string | null;
 
   @Column({ name: 'effective_from', type: 'int', default: 2022 })
   effectiveFrom: number;

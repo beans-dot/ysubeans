@@ -62,10 +62,12 @@ import {
 } from './strategic-plan.constants';
 import {
   displayGoal,
-  displayKpi,
+  displayKpiCode,
   displayStrategy,
   displaySubtask,
   displayTask,
+  kpiSuffixOf,
+  kpiTaskPrefix,
   parseKpiCode,
   parseTaskCode,
 } from './sp-codes';
@@ -341,9 +343,20 @@ export class StrategicPlanService implements OnModuleInit {
       const payload = year
         ? await this.structure.overlayPayload('kpi', row.kpiCode, asOf)
         : null;
+      const taskAlpha = kpiTaskPrefix(
+        row.kpiCode,
+        String(payload?.taskCode ?? row.taskCode ?? ''),
+      );
+      const suffix = payload
+        ? kpiSuffixOf(
+            String(payload.kpiCode ?? row.kpiCode),
+            payload.suffix as string | undefined,
+          )
+        : kpiSuffixOf(row.kpiCode, row.suffix);
       return {
         kpiCode: row.kpiCode,
-        displayCode: displayKpi(row.kpiCode),
+        suffix,
+        displayCode: displayKpiCode(taskAlpha, suffix),
         kpiName: String(payload?.kpiName ?? row.kpiName),
         unit:
           payload?.unit === undefined ? row.unit : (payload.unit as string | null),
@@ -392,6 +405,14 @@ export class StrategicPlanService implements OnModuleInit {
       const list = kpiCodesByTask.get(k.taskCode) ?? [];
       list.push(k.kpiCode);
       kpiCodesByTask.set(k.taskCode, list);
+    }
+    const kpiViewByCode = new Map(kpiViews.map((k) => [k.kpiCode, k]));
+    for (const list of kpiCodesByTask.values()) {
+      list.sort((a, b) => {
+        const da = kpiViewByCode.get(a)?.displayCode ?? a;
+        const db = kpiViewByCode.get(b)?.displayCode ?? b;
+        return da.localeCompare(db);
+      });
     }
 
     const targetsByKpi = new Map<string, Record<number, number | null>>();
@@ -892,6 +913,7 @@ export class StrategicPlanService implements OnModuleInit {
     if (dto.baseline !== undefined) patch.baseline = dto.baseline;
     if (dto.baselineRef !== undefined) patch.baselineRef = dto.baselineRef;
     if (dto.formula !== undefined) patch.formula = dto.formula;
+    if (dto.suffix !== undefined) patch.suffix = dto.suffix;
     return this.structure.updateNode(
       { kind: 'kpi', lineageId: kpiCode, year: dto.year, patch },
       userId,

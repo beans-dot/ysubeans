@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { goalAccent } from '@/lib/strategic-plan/goalAccent';
@@ -147,7 +148,9 @@ export function DeptView({
                         >
                           {task.strategyId}
                         </Badge>
-                        <Badge variant="code">{task.taskCode}</Badge>
+                        <SpCodeBadge level="task">
+                          {task.displayCode ?? task.taskCode}
+                        </SpCodeBadge>
                         <span>{task.taskName}</span>
                       </li>
                     ))}

@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { IR_WORK_SAVE_EVENT, notifyAutoSaved } from '@/components/admin/AutoSaveToast';
-import { Badge } from '@/components/ui/badge';
+import { notifyAutoSaved } from '@/components/admin/AutoSaveToast';
+import { SpCodeBadge, spCodeLevelFromKind } from '@/components/strategic-plan/SpCodeBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -38,12 +38,6 @@ export function PlanChangeLogManager({
   };
 
   useEffect(load, []);
-
-  useEffect(() => {
-    const onSave = () => load();
-    window.addEventListener(IR_WORK_SAVE_EVENT, onSave);
-    return () => window.removeEventListener(IR_WORK_SAVE_EVENT, onSave);
-  }, []);
 
   const rollback = async (row: SpChangeLog) => {
     const ok = window.confirm(
@@ -95,7 +89,9 @@ export function PlanChangeLogManager({
                   <td className="px-2 py-1.5 text-left">{row.year}</td>
                   <td className="px-2 py-1.5 text-left">{row.kindLabel}</td>
                   <td className="px-2 py-1.5 text-left">
-                    <Badge variant="code">{row.displayCode}</Badge>
+                    <SpCodeBadge level={spCodeLevelFromKind(row.kind)}>
+                      {row.displayCode}
+                    </SpCodeBadge>
                   </td>
                   <td className="px-2 py-1.5 text-left">{row.changeTypeLabel}</td>
                   <td className="px-2 py-1.5 text-left">{row.summary}</td>

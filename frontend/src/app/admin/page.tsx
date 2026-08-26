@@ -48,11 +48,7 @@ export default function AdminPage() {
       <div className="px-6 py-6">
         <h1 className="mb-4 text-2xl">시스템관리</h1>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-          <AdminNav
-            menu={menu}
-            onSelect={setMenu}
-            showWorkSave={menu === 'strategic-plan'}
-          />
+          <AdminNav menu={menu} onSelect={setMenu} />
           <div className="min-w-0 flex-1">
             <div className="sr-only">{ADMIN_MENU_TITLES[menu]}</div>
             <AdminBody menu={menu} />

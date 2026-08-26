@@ -10,7 +10,7 @@ import {
   useStrategicPlanStore,
   type SpKpiSortKey,
 } from '@/store/useStrategicPlanStore';
-import { Badge } from '@/components/ui/badge';
+import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { EmptyState, SectionLabel } from './ui';
 
 function sortValue(kpi: SpKpi, key: SpKpiSortKey, year: number) {
@@ -182,9 +182,9 @@ export function KpiView({
                         className={cn('h-2 w-2 rounded-full', accent.dot)}
                         aria-hidden
                       />
-                      <Badge variant="code">
+                      <SpCodeBadge level="kpi">
                         {kpi.displayCode ?? kpi.kpiCode}
-                      </Badge>
+                      </SpCodeBadge>
                     </span>
                   </td>
                   <td className="px-3 py-2">

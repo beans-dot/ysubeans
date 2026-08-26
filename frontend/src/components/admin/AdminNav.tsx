@@ -1,9 +1,7 @@
 'use client';
 
-import { ChevronDown, Save } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
-import { requestWorkSave } from '@/components/admin/AutoSaveToast';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export type AdminMenuId =
@@ -80,11 +78,9 @@ function groupContains(group: NavGroup, menu: AdminMenuId) {
 export function AdminNav({
   menu,
   onSelect,
-  showWorkSave = false,
 }: {
   menu: AdminMenuId;
   onSelect: (id: AdminMenuId) => void;
-  showWorkSave?: boolean;
 }) {
   const [open, setOpen] = useState<Record<string, boolean>>({
     member: true,
@@ -95,7 +91,7 @@ export function AdminNav({
   return (
     <nav
       aria-label="시스템관리 메뉴"
-      className="flex w-full shrink-0 flex-col lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)] lg:w-56"
+      className="flex w-full shrink-0 flex-col lg:sticky lg:top-20 lg:w-56"
     >
       <ul className="space-y-1 overflow-y-auto rounded-md border p-2">
         {NAV.map((group) => {
@@ -146,17 +142,6 @@ export function AdminNav({
           );
         })}
       </ul>
-      {showWorkSave && (
-        <div className="mt-auto pt-3">
-          <Button
-            type="button"
-            className="w-full"
-            onClick={() => requestWorkSave()}
-          >
-            <Save className="mr-1 h-4 w-4" /> 작업 저장
-          </Button>
-        </div>
-      )}
     </nav>
   );
 }

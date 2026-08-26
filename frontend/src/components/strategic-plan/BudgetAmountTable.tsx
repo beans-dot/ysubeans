@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
+import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { Input } from '@/components/ui/input';
 import { fmt1, fmtWon, parseAmount } from '@/lib/strategic-plan/format';
 import type { SpBudgetDraft, SpFundSource } from '@/lib/strategic-plan/types';
@@ -194,7 +194,7 @@ export function BudgetAmountTable({
     <div>
       {unitName ? (
         <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold">
-          <Badge variant="code">{displayCode ?? unitCode}</Badge>
+          <SpCodeBadge level="subtask">{displayCode ?? unitCode}</SpCodeBadge>
           <span className="font-normal">{unitName}</span>
         </p>
       ) : null}

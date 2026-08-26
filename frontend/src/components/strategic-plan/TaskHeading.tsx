@@ -1,3 +1,4 @@
+import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { Badge } from '@/components/ui/badge';
 import type { SpTask } from '@/lib/strategic-plan/types';
 import { cn } from '@/lib/utils';
@@ -23,7 +24,7 @@ export function TaskHeading({
           titleClassName,
         )}
       >
-        <Badge variant="code">{task.displayCode ?? task.taskCode}</Badge>
+        <SpCodeBadge level="task">{task.displayCode ?? task.taskCode}</SpCodeBadge>
         <span>{task.taskName}</span>
       </span>
       {showMeta && (
@@ -33,7 +34,11 @@ export function TaskHeading({
               <Badge variant="outline">{task.primaryDept}</Badge>
             )}
             {task.isSpecialized && (
-              <Badge variant="secondary">특성화 연계</Badge>
+              <Badge
+                className="border-[#bb1b6f] bg-[#bb1b6f] text-white"
+              >
+                특성화 연계
+              </Badge>
             )}
           </span>
           {showKpiTaskCounts && (

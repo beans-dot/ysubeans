@@ -100,6 +100,21 @@ export function displayKpi(alphaCode: string) {
   return alphaCode;
 }
 
+export function kpiSuffixOf(kpiCode: string, suffix?: string | null) {
+  if (suffix && /^[a-z]$/.test(suffix)) return suffix;
+  const m = /([a-z])$/.exec(kpiCode.trim());
+  return m?.[1] ?? 'a';
+}
+
+export function kpiTaskPrefix(kpiCode: string, taskCode?: string | null) {
+  if (taskCode && taskCode.trim()) return taskCode.trim();
+  return parseKpiCode(kpiCode).taskAlpha;
+}
+
+export function displayKpiCode(taskAlpha: string, suffix: string) {
+  return `${taskAlpha}${suffix}`;
+}
+
 export function kindLabel(kind: SpNodeKind) {
   if (kind === 'goal') return '발전전략';
   if (kind === 'strategy') return '전략과제';

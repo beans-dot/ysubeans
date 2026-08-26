@@ -3,16 +3,10 @@
 import { useEffect, useState } from 'react';
 
 const AUTOSAVE_EVENT = 'ir-autosave-toast';
-const WORKSAVE_EVENT = 'ir-work-save';
 
 export function notifyAutoSaved() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new Event(AUTOSAVE_EVENT));
-}
-
-export function requestWorkSave() {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new Event(WORKSAVE_EVENT));
 }
 
 export function AutoSaveToastHost() {
@@ -37,11 +31,9 @@ export function AutoSaveToastHost() {
   return (
     <div
       role="status"
-      className="pointer-events-none fixed bottom-6 right-6 z-[80] rounded-md border bg-background px-3 py-2 text-sm shadow-md"
+      className="pointer-events-none fixed bottom-6 right-6 z-[80] rounded-md border border-red-600 bg-white px-3 py-2 text-sm font-bold text-red-600 shadow-md"
     >
-      자동 저장 되었습니다
+      저장되었습니다.
     </div>
   );
 }
-
-export const IR_WORK_SAVE_EVENT = WORKSAVE_EVENT;

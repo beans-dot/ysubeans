@@ -255,7 +255,7 @@ export async function createSpKpi(payload: {
 export async function updateSpKpi(
   kpiCode: string,
   payload: Partial<
-    Pick<SpKpi, 'kpiName' | 'unit' | 'baseline' | 'formula' | 'primaryDept'>
+    Pick<SpKpi, 'kpiName' | 'unit' | 'baseline' | 'formula' | 'primaryDept' | 'suffix'>
   > & {
     taskCode?: string;
     baselineRef?: string;

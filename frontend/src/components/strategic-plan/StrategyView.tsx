@@ -2,14 +2,61 @@
 
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { Card, CardContent } from '@/components/ui/card';
 import { fmt } from '@/lib/strategic-plan/format';
 import { goalAccent } from '@/lib/strategic-plan/goalAccent';
-import type { SpGoal, SpKpi, SpTask } from '@/lib/strategic-plan/types';
+import type { SpGoal, SpKpi, SpSubtask, SpTask } from '@/lib/strategic-plan/types';
 import { cn } from '@/lib/utils';
 import { TaskHeading } from './TaskHeading';
 import { EmptyState, SectionLabel } from './ui';
+
+function SubtaskRow({ sub }: { sub: SpSubtask }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 py-1 text-left text-sm hover:bg-accent/40"
+      >
+        <ChevronRight
+          className={cn(
+            'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+            open && 'rotate-90',
+          )}
+        />
+        <SpCodeBadge level="subtask">
+          {sub.displayCode ?? sub.subtaskCode}
+        </SpCodeBadge>
+        <span className="min-w-0">{sub.subtaskName}</span>
+      </button>
+      {open && (
+        <table className="mb-2 ml-5 w-[calc(100%-1.25rem)] border text-sm">
+          <tbody>
+            <tr className="border-b">
+              <th className="w-24 bg-muted/40 px-2 py-1.5 text-left align-top font-bold">
+                추진내용
+              </th>
+              <td className="whitespace-pre-wrap px-2 py-1.5">
+                {sub.purpose?.trim() || '–'}
+              </td>
+            </tr>
+            <tr>
+              <th className="bg-muted/40 px-2 py-1.5 text-left align-top font-bold">
+                추진방법
+              </th>
+              <td className="whitespace-pre-wrap px-2 py-1.5">
+                {sub.method?.trim() || '–'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </li>
+  );
+}
 
 function TaskRow({
   task,
@@ -52,15 +99,7 @@ function TaskRow({
               <SectionLabel>세부 TASK</SectionLabel>
               <ul className={cn('space-y-1 border-l-2 pl-3', accent.border)}>
                 {task.subtasks.map((sub) => (
-                  <li
-                    key={sub.subtaskId}
-                    className="flex flex-wrap items-center gap-2 text-sm"
-                  >
-                    <span>{sub.subtaskName}</span>
-                    <Badge variant="code">
-                      {sub.displayCode ?? sub.subtaskCode}
-                    </Badge>
-                  </li>
+                  <SubtaskRow key={sub.subtaskId} sub={sub} />
                 ))}
               </ul>
             </div>
@@ -79,9 +118,9 @@ function TaskRow({
                       key={code}
                       className="flex flex-wrap items-center gap-2 text-sm"
                     >
-                      <Badge variant="code">
+                      <SpCodeBadge level="kpi">
                         {kpi.displayCode ?? kpi.kpiCode}
-                      </Badge>
+                      </SpCodeBadge>
                       <span className="min-w-0 flex-1">{kpi.kpiName}</span>
                       <span className="text-muted-foreground">
                         {fmt(kpi.baseline)} → {fmt(kpi.targets[lastYear])}
@@ -136,7 +175,7 @@ export function StrategyView({
         return (
           <section key={goal.goalId}>
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <Badge variant="code">{goal.displayCode ?? goal.goalId}</Badge>
+              <SpCodeBadge level="goal">{goal.displayCode ?? goal.goalId}</SpCodeBadge>
               <h2>
                 {goal.goalNo}. {goal.goalName}
               </h2>
@@ -154,9 +193,9 @@ export function StrategyView({
                 >
                   <CardContent className="p-4">
                     <h3 className="mb-1 flex flex-wrap items-center gap-2 text-sm font-bold">
-                      <Badge variant="code">
+                      <SpCodeBadge level="strategy">
                         {strategy.displayCode ?? strategy.strategyId}
-                      </Badge>
+                      </SpCodeBadge>
                       {strategy.strategyName}
                     </h3>
                     <ul>

@@ -8,6 +8,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -312,6 +313,11 @@ export class UpdateKpiDto {
   @IsString()
   @MaxLength(100)
   primaryDept?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z]$/)
+  suffix?: string;
 
   @Type(() => Number)
   @IsInt()

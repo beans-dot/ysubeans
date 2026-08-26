@@ -20,13 +20,15 @@ import {
 import {
   changeTypeLabel,
   displayGoal,
-  displayKpi,
+  displayKpiCode,
   displayStrategy,
   displaySubtask,
   displayTask,
   isGoalAlpha,
   isStrategyAlpha,
   kindLabel,
+  kpiSuffixOf,
+  kpiTaskPrefix,
   parseKpiCode,
   parseSubtaskCode,
   parseTaskCode,
@@ -186,6 +188,26 @@ export class SpStructureService {
         });
       }
     }
+
+    const allKpis = await this.kpiRepo.find();
+    for (const kpi of allKpis) {
+      const suffix = kpiSuffixOf(kpi.kpiCode, kpi.suffix);
+      if (kpi.suffix !== suffix) {
+        await this.kpiRepo.update(kpi.kpiCode, { suffix });
+      }
+    }
+  }
+
+  private kpiDisplay(row: IrSpKpi, payload?: Record<string, unknown> | null) {
+    const taskAlpha = kpiTaskPrefix(
+      row.kpiCode,
+      String(payload?.taskCode ?? row.taskCode ?? ''),
+    );
+    const suffix = kpiSuffixOf(
+      row.kpiCode,
+      String((payload?.suffix as string | undefined) ?? row.suffix ?? ''),
+    );
+    return displayKpiCode(taskAlpha, suffix);
   }
 
   isActiveAt(effectiveFrom: number, abolishedFrom: number | null, year: number) {
@@ -479,6 +501,9 @@ export class SpStructureService {
         payload.primaryDept === undefined
           ? row.primaryDept
           : (payload.primaryDept as string | null);
+      if (typeof payload.suffix === 'string') {
+        row.suffix = kpiSuffixOf(row.kpiCode, payload.suffix);
+      }
       row.abolishedFrom =
         payload.abolishedFrom === undefined
           ? row.abolishedFrom
@@ -488,7 +513,7 @@ export class SpStructureService {
       await this.finishRollback(
         'kpi',
         row.kpiCode,
-        displayKpi(row.kpiCode),
+        this.kpiDisplay(row),
         year,
         before,
         after,
@@ -610,6 +635,7 @@ export class SpStructureService {
   kpiPayload(row: IrSpKpi): Record<string, unknown> {
     return {
       kpiCode: row.kpiCode,
+      suffix: kpiSuffixOf(row.kpiCode, row.suffix),
       kpiName: row.kpiName,
       unit: row.unit,
       taskCode: row.taskCode,
@@ -880,11 +906,26 @@ export class SpStructureService {
     if (!/^[A-Z]\d+[a-z]$/.test(alpha)) {
       throw new BadRequestException('KPI 코드는 A11a처럼 실행과제 코드+소문자여야 합니다.');
     }
+    const suffix = kpiSuffixOf(alpha);
     const task = await this.taskRepo.findOne({ where: { taskCode: input.taskCode } });
     if (!task) throw new NotFoundException('실행과제를 찾을 수 없습니다.');
+    if (parsed.taskAlpha && parsed.taskAlpha !== task.taskCode) {
+      throw new BadRequestException('KPI 코드의 앞자리는 실행과제 코드와 같아야 합니다.');
+    }
     const exists = await this.kpiRepo.findOne({ where: { kpiCode: alpha } });
     if (exists && exists.abolishedFrom == null) {
       throw new BadRequestException(`이미 있는 KPI 코드입니다: ${alpha}`);
+    }
+    const siblings = await this.kpiRepo.find({
+      where: { taskCode: task.taskCode, abolishedFrom: IsNull() },
+    });
+    for (const sibling of siblings) {
+      if (sibling.kpiCode === alpha) continue;
+      if (kpiSuffixOf(sibling.kpiCode, sibling.suffix) === suffix) {
+        throw new BadRequestException(
+          `이미 쓰는 표시 코드입니다: ${displayKpiCode(task.taskCode, suffix)}`,
+        );
+      }
     }
     const count = await this.kpiRepo.count({ where: { taskCode: task.taskCode } });
     const row = exists ?? this.kpiRepo.create({ kpiCode: alpha });
@@ -894,16 +935,18 @@ export class SpStructureService {
     row.goalId = task.goalId;
     row.unit = input.unit?.trim() || null;
     row.primaryDept = input.primaryDept?.trim() || task.primaryDept;
+    row.suffix = suffix;
     row.displayOrder = exists?.displayOrder ?? count;
     row.effectiveFrom = exists ? exists.effectiveFrom : input.year;
     row.abolishedFrom = null;
     await this.kpiRepo.save(row);
     const after = this.kpiPayload(row);
+    const display = this.kpiDisplay(row);
     await this.writeVersion({
       kind: 'kpi',
       lineageId: alpha,
       alphaCode: alpha,
-      displayCode: displayKpi(alpha),
+      displayCode: display,
       year: input.year,
       changeType: 'create',
       payload: after,
@@ -913,9 +956,9 @@ export class SpStructureService {
       year: input.year,
       kind: 'kpi',
       lineageId: alpha,
-      displayCode: displayKpi(alpha),
+      displayCode: display,
       changeType: 'create',
-      summary: `${displayKpi(alpha)} 신설`,
+      summary: `${display} 신설`,
       before: null,
       after,
       userId,
@@ -1099,11 +1142,33 @@ export class SpStructureService {
             ? input.patch.formula.trim() || null
             : null;
       }
+      if (typeof input.patch.suffix === 'string') {
+        const letter = input.patch.suffix.trim().toLowerCase();
+        if (!/^[a-z]$/.test(letter)) {
+          throw new BadRequestException('KPI 접미사는 소문자 한 글자여야 합니다.');
+        }
+        const prefix = kpiTaskPrefix(row.kpiCode, row.taskCode);
+        if (!row.taskCode) {
+          throw new BadRequestException('KPI에 실행과제가 없습니다.');
+        }
+        const siblings = await this.kpiRepo.find({
+          where: { taskCode: row.taskCode, abolishedFrom: IsNull() },
+        });
+        for (const sibling of siblings) {
+          if (sibling.kpiCode === row.kpiCode) continue;
+          if (kpiSuffixOf(sibling.kpiCode, sibling.suffix) === letter) {
+            throw new BadRequestException(
+              `이미 쓰는 표시 코드입니다: ${displayKpiCode(prefix, letter)}`,
+            );
+          }
+        }
+        row.suffix = letter;
+      }
       await this.kpiRepo.save(row);
       return this.commitUpdate(
         'kpi',
         row.kpiCode,
-        displayKpi(row.kpiCode),
+        this.kpiDisplay(row),
         input.year,
         before,
         this.kpiPayload(row),
@@ -1131,7 +1196,7 @@ export class SpStructureService {
   }
 
   async abolishNode(
-    input: { kind: SpNodeKind; lineageId: string; year: number },
+    input: { kind: SpNodeKind; lineageId: string; year: number; skipCompact?: boolean },
     userId: string,
   ) {
     this.assertYear(input.year);
@@ -1194,7 +1259,7 @@ export class SpStructureService {
       });
       for (const kpi of kpis) {
         await this.abolishNode(
-          { kind: 'kpi', lineageId: kpi.kpiCode, year: input.year },
+          { kind: 'kpi', lineageId: kpi.kpiCode, year: input.year, skipCompact: true },
           userId,
         );
       }
@@ -1232,10 +1297,11 @@ export class SpStructureService {
     if (input.kind === 'kpi') {
       const row = await this.kpiRepo.findOne({ where: { kpiCode: input.lineageId } });
       if (!row) throw new NotFoundException('KPI를 찾을 수 없습니다.');
-      return this.markAbolished(
+      const taskCode = row.taskCode;
+      const result = await this.markAbolished(
         'kpi',
         row.kpiCode,
-        displayKpi(row.kpiCode),
+        this.kpiDisplay(row),
         this.kpiPayload(row),
         input.year,
         userId,
@@ -1244,6 +1310,10 @@ export class SpStructureService {
           await this.kpiRepo.save(row);
         },
       );
+      if (!input.skipCompact && taskCode) {
+        await this.compactKpiSuffixes(taskCode, input.year, userId);
+      }
+      return result;
     }
     const row = await this.fundRepo.findOne({
       where: { fundSourceId: Number(input.lineageId) },
@@ -1262,6 +1332,38 @@ export class SpStructureService {
         await this.fundRepo.save(row);
       },
     );
+  }
+
+  private async compactKpiSuffixes(taskCode: string, year: number, userId: string) {
+    const live = await this.kpiRepo.find({
+      where: { taskCode, abolishedFrom: IsNull() },
+    });
+    live.sort((a, b) => {
+      const sa = kpiSuffixOf(a.kpiCode, a.suffix);
+      const sb = kpiSuffixOf(b.kpiCode, b.suffix);
+      if (sa !== sb) return sa.localeCompare(sb);
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return a.kpiCode.localeCompare(b.kpiCode);
+    });
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    for (let i = 0; i < live.length; i++) {
+      const next = letters[i];
+      if (!next) break;
+      const row = live[i];
+      if (kpiSuffixOf(row.kpiCode, row.suffix) === next) continue;
+      const before = this.kpiPayload(row);
+      row.suffix = next;
+      await this.kpiRepo.save(row);
+      await this.commitUpdate(
+        'kpi',
+        row.kpiCode,
+        this.kpiDisplay(row),
+        year,
+        before,
+        this.kpiPayload(row),
+        userId,
+      );
+    }
   }
 
   private async commitUpdate(
