@@ -4,9 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { api, type TargetTreeNode } from '@/lib/api';
 import {
-  collectAggregatableNodes,
   findAggregatableNode,
-  isFullyCovered,
   toGroupTarget,
   toIndividualTargetFromNode,
   type AggregatableNode,
@@ -171,35 +169,14 @@ function TreeNode({
     [selectedTargets],
   );
 
-  const aggNodes = useMemo(() => collectAggregatableNodes(tree), [tree]);
-
-  const checkState: boolean | 'indeterminate' = (() => {
+  const checkState = (() => {
     if (localGroup || hierarchyNode) {
       const id = localGroup?.target.key ?? hierarchyNode!.id;
-      if (selectedKeys.has(id)) return true;
-      if (hierarchyNode && isFullyCovered(hierarchyNode, selectedKeys, aggNodes)) {
-        return true;
-      }
-      // 하위 일부 선택
-      if (hierarchyNode) {
-        const covered = hierarchyNode.leafKeys.filter((k) => selectedKeys.has(k)).length;
-        if (covered > 0) return 'indeterminate';
-      }
-      if (localGroup) {
-        const keys = localGroup.descendantKeys.filter((k) => k !== id);
-        if (keys.some((k) => selectedKeys.has(k))) return 'indeterminate';
-      }
-      return false;
+      return selectedKeys.has(id);
     }
     if (isUniv) {
       const key = node.univCode ?? node.id;
-      if (selectedKeys.has(key)) return true;
-      if (aggNode && isFullyCovered(aggNode, selectedKeys, aggNodes)) return true;
-      if (aggNode) {
-        const covered = aggNode.leafKeys.filter((k) => selectedKeys.has(k)).length;
-        if (covered > 0) return 'indeterminate';
-      }
-      return false;
+      return selectedKeys.has(key);
     }
     if (isDept && node.selectable && node.univCode && node.deptCode) {
       return selectedKeys.has(`${node.univCode}::${node.deptCode}`);

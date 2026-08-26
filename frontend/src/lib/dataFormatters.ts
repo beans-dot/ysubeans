@@ -35,6 +35,8 @@ export interface ChartSeries {
   label: string;
   isYeonsung: boolean;
   unit: string | null;
+  metricId: number;
+  targetKey: string;
   /** 절대값 모드 다중 축 할당 */
   yAxisId?: YAxisSide;
 }
@@ -56,6 +58,8 @@ export function pivotToChart(pivot: PivotResult): ChartTransform {
     label: `${r.targetLabel} · ${r.metricName}`,
     isYeonsung: r.isYeonsung,
     unit: r.metricUnit,
+    metricId: r.metricId,
+    targetKey: r.targetKey,
   }));
 
   const data = pivot.years.map((year) => {

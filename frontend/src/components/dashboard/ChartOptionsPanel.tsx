@@ -2,6 +2,7 @@
 
 import { Settings2 } from 'lucide-react';
 import { useMemo } from 'react';
+import { MAX_CHART_SERIES, orderSeriesForChart } from '@/lib/chartStyleUtils';
 import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,10 +16,15 @@ export function ChartOptionsPanel() {
   // 추세선 대상: 대상선택 × 지표선택 조합(현재 조회된 시리즈)
   const trendTargets = useMemo(() => {
     if (!pivot) return [] as Array<{ key: string; label: string }>;
-    return pivot.rows.map((r) => ({
+    const items = pivot.rows.map((r) => ({
       key: `${r.targetKey}__${r.metricId}`,
       label: `[${r.targetLabel}] ${r.metricName}`,
+      isYeonsung: r.isYeonsung,
+      metricId: r.metricId,
     }));
+    return orderSeriesForChart(items)
+      .slice(0, MAX_CHART_SERIES)
+      .map(({ key, label }) => ({ key, label }));
   }, [pivot]);
 
   const toggleTrendSeries = (key: string, value: boolean) => {

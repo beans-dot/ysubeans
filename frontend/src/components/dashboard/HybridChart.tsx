@@ -20,7 +20,7 @@ import {
 } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
-import { buildSeriesStyleMap } from '@/lib/chartStyleUtils';
+import { buildSeriesStyleMap, MAX_CHART_SERIES } from '@/lib/chartStyleUtils';
 import {
   assignDualYAxes,
   computeAbsoluteDomain,
@@ -45,6 +45,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { logDataExport } from '@/lib/exportLog';
 import { renderMarker } from './ChartMarkers';
+import {
+  CorrDragGhost,
+  CorrelationPanel,
+  corrSlotFromPoint,
+  type CorrLegendItem,
+} from './CorrelationPanel';
 
 type YearHoverState = {
   year: number;
@@ -103,6 +109,70 @@ function YearEventsMemo({
         ))}
       </div>
     </div>
+  );
+}
+
+function EmphasisLegend({
+  items,
+  emphasizedKeys,
+  onToggle,
+  dragEnabled,
+  onCorrPointerDown,
+}: {
+  items: Array<{ key: string; label: string; color?: string }>;
+  emphasizedKeys: Set<string>;
+  onToggle: (key: string) => void;
+  dragEnabled?: boolean;
+  onCorrPointerDown?: (item: CorrLegendItem, e: React.PointerEvent) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 pt-3">
+      {items.map((item) => {
+        const on = emphasizedKeys.has(item.key);
+        return (
+          <li key={item.key}>
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                if (!dragEnabled || e.button !== 0) return;
+                onCorrPointerDown?.(item, e);
+              }}
+              onClick={() => {
+                if (dragEnabled) return;
+                onToggle(item.key);
+              }}
+              className={cn(
+                'inline-flex max-w-[280px] items-center gap-1.5 text-left text-xs text-foreground',
+                dragEnabled && 'cursor-grab active:cursor-grabbing',
+              )}
+              title={
+                dragEnabled
+                  ? '드래그하면 상관계수 분석에 넣고, 짧게 클릭하면 선을 강조합니다'
+                  : on
+                    ? '강조 해제'
+                    : '클릭하면 이 선을 굵게 표시합니다'
+              }
+            >
+              <span
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ background: item.color }}
+              />
+              <span
+                className={cn(
+                  'truncate',
+                  on
+                    ? 'font-bold underline decoration-gray-400 decoration-2 underline-offset-2'
+                    : 'font-normal',
+                )}
+              >
+                {item.label}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -283,6 +353,30 @@ export function HybridChart() {
   const [allowAbsoluteWithClash, setAllowAbsoluteWithClash] = useState(false);
   const [annualEvents, setAnnualEvents] = useState<AnnualEvent[]>([]);
   const [yearHover, setYearHover] = useState<YearHoverState | null>(null);
+  const [emphasizedKeys, setEmphasizedKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [corrOpen, setCorrOpen] = useState(false);
+  const [corrSlots, setCorrSlots] = useState<[string | null, string | null]>([
+    null,
+    null,
+  ]);
+  const [corrGhost, setCorrGhost] = useState<{
+    label: string;
+    color?: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [corrHoverSlot, setCorrHoverSlot] = useState<number | null>(null);
+  const corrPointerRef = useRef<{
+    key: string;
+    label: string;
+    color?: string;
+    fromSlot: number | null;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
 
   useEffect(() => {
     api
@@ -305,6 +399,7 @@ export function HybridChart() {
 
   const seriesSignature = chartBase?.series.map((s) => s.key).join('|') ?? '';
   const unitClash = chartBase?.unitClash ?? false;
+  const corrDisabled = (chartBase?.data.length ?? 0) <= 1;
 
   // 단위 교차 선택 시 Index 모드 강제 + 알림
   useEffect(() => {
@@ -326,6 +421,109 @@ export function HybridChart() {
     // seriesSignature: 선택 지표 조합이 바뀔 때만 재적용
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unitClash, seriesSignature]);
+
+  useEffect(() => {
+    setEmphasizedKeys(new Set());
+    setCorrSlots([null, null]);
+  }, [seriesSignature]);
+
+  useEffect(() => {
+    if (corrDisabled) setCorrOpen(false);
+  }, [corrDisabled]);
+
+  const toggleEmphasis = (key: string) => {
+    setEmphasizedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const assignCorrSlot = (index: number, key: string) => {
+    setCorrSlots((prev) => {
+      const next: [string | null, string | null] = [prev[0], prev[1]];
+      const other = index === 0 ? 1 : 0;
+      if (next[other] === key) next[other] = null;
+      next[index] = key;
+      return next;
+    });
+  };
+
+  const clearCorrSlot = (index: number) => {
+    setCorrSlots((prev) => {
+      const next: [string | null, string | null] = [prev[0], prev[1]];
+      next[index] = null;
+      return next;
+    });
+  };
+
+  const toggleEmphasisRef = useRef(toggleEmphasis);
+  toggleEmphasisRef.current = toggleEmphasis;
+  const assignCorrSlotRef = useRef(assignCorrSlot);
+  assignCorrSlotRef.current = assignCorrSlot;
+  const clearCorrSlotRef = useRef(clearCorrSlot);
+  clearCorrSlotRef.current = clearCorrSlot;
+
+  const beginCorrPointer = (
+    item: CorrLegendItem,
+    fromSlot: number | null,
+    e: React.PointerEvent,
+  ) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    corrPointerRef.current = {
+      key: item.key,
+      label: item.label,
+      color: item.color,
+      fromSlot,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    };
+  };
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const d = corrPointerRef.current;
+      if (!d) return;
+      const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
+      if (!d.moved && dist < 8) return;
+      d.moved = true;
+      document.body.style.userSelect = 'none';
+      setCorrGhost({
+        label: d.label,
+        color: d.color,
+        x: e.clientX,
+        y: e.clientY,
+      });
+      setCorrHoverSlot(corrSlotFromPoint(e.clientX, e.clientY));
+    };
+    const onUp = (e: PointerEvent) => {
+      const d = corrPointerRef.current;
+      if (!d) return;
+      corrPointerRef.current = null;
+      document.body.style.userSelect = '';
+      setCorrGhost(null);
+      setCorrHoverSlot(null);
+      if (!d.moved) {
+        if (d.fromSlot == null) toggleEmphasisRef.current(d.key);
+        return;
+      }
+      const slot = corrSlotFromPoint(e.clientX, e.clientY);
+      if (slot != null) assignCorrSlotRef.current(slot, d.key);
+      else if (d.fromSlot != null) clearCorrSlotRef.current(d.fromSlot);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      document.body.style.userSelect = '';
+    };
+  }, []);
 
   const handleScaleModeChange = (mode: ChartScaleMode) => {
     if (mode === 'absolute' && unitClash) {
@@ -369,7 +567,7 @@ export function HybridChart() {
         : 'dashboard-chart',
       filename,
       summary: chartBase
-        ? `차트 ${chartBase.series.length}개 시리즈`
+        ? `차트 ${Math.min(chartBase.series.length, MAX_CHART_SERIES)}개 시리즈`
         : undefined,
     });
   };
@@ -392,8 +590,19 @@ export function HybridChart() {
   const seriesByKey = Object.fromEntries(baseSeries.map((s) => [s.key, s]));
 
   const useDualAxes = scaleMode === 'absolute' && unitClash;
-  const series = useDualAxes ? assignDualYAxes(baseSeries) : baseSeries;
+  const allSeries = useDualAxes ? assignDualYAxes(baseSeries) : baseSeries;
+  const { styles: styleMap, visibleKeys, truncated } =
+    buildSeriesStyleMap(allSeries);
+  const seriesByAllKey = Object.fromEntries(allSeries.map((s) => [s.key, s]));
+  const series = visibleKeys
+    .map((key) => seriesByAllKey[key])
+    .filter((s): s is (typeof allSeries)[number] => !!s);
   const seriesAxisByKey = Object.fromEntries(series.map((s) => [s.key, s]));
+  const drawSeries = [...series].sort((a, b) => {
+    const ae = emphasizedKeys.has(a.key) ? 1 : 0;
+    const be = emphasizedKeys.has(b.key) ? 1 : 0;
+    return ae - be;
+  });
 
   const indexResult =
     scaleMode === 'index' ? toIndex100(originalData, series) : null;
@@ -420,9 +629,6 @@ export function HybridChart() {
 
   // 1개년만 조회 시 세로 막대형으로 나열(겹침 방지), 2개년 이상은 추이 곡선
   const isSingleYear = plotData.length <= 1;
-
-  // 전체 시리즈 색상 중복 방지(전역 유일) 스타일 맵
-  const styleMap = buildSeriesStyleMap(series);
 
   // 추세선: 선택 데이터(시리즈)별 on/off. 단일 연도는 회귀 불가 → 제외
   const trendKeys =
@@ -474,12 +680,34 @@ export function HybridChart() {
             mode={scaleMode}
             onChange={handleScaleModeChange}
           />
+          <Button
+            variant={corrOpen ? 'default' : 'outline'}
+            size="sm"
+            disabled={corrDisabled}
+            title={
+              corrDisabled
+                ? '연도가 2개 이상일 때 상관계수를 계산할 수 있습니다.'
+                : undefined
+            }
+            onClick={() => setCorrOpen((v) => !v)}
+          >
+            상관계수 분석
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExport}>
             <Download className="mr-1 h-4 w-4" /> PNG 저장
           </Button>
         </div>
       </CardHeader>
       <CardContent>
+        {truncated && (
+          <div
+            role="status"
+            className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+          >
+            차트 가시성을 위해 최대 {MAX_CHART_SERIES}개 데이터까지만
+            지원합니다.
+          </div>
+        )}
         {unitClashNotice && (
           <div
             role="status"
@@ -605,7 +833,23 @@ export function HybridChart() {
                   />
                 )}
               />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Legend
+                content={() => (
+                  <EmphasisLegend
+                    items={series.map((s) => ({
+                      key: s.key,
+                      label: s.label,
+                      color: styleMap[s.key]?.stroke,
+                    }))}
+                    emphasizedKeys={emphasizedKeys}
+                    onToggle={toggleEmphasis}
+                    dragEnabled={corrOpen}
+                    onCorrPointerDown={(item, e) =>
+                      beginCorrPointer(item, null, e)
+                    }
+                  />
+                )}
+              />
 
               {showReference && (
                 <ReferenceLine
@@ -623,9 +867,14 @@ export function HybridChart() {
                 </ReferenceLine>
               )}
 
-              {series.map((s) => {
+              {drawSeries.map((s) => {
                 const style = styleMap[s.key];
+                if (!style) return null;
                 const axisId = useDualAxes ? (s.yAxisId ?? 'left') : 'left';
+                const emphasized = emphasizedKeys.has(s.key);
+                const strokeWidth = emphasized
+                  ? style.emphasizedStrokeWidth
+                  : style.strokeWidth;
 
                 if (isSingleYear) {
                   return (
@@ -636,6 +885,8 @@ export function HybridChart() {
                       name={s.label}
                       fill={style.stroke}
                       maxBarSize={64}
+                      stroke={emphasized ? style.stroke : undefined}
+                      strokeWidth={emphasized ? 2 : 0}
                     >
                       {options.showDataLabels && (
                         <LabelList
@@ -660,18 +911,20 @@ export function HybridChart() {
                     dataKey={s.key}
                     name={s.label}
                     stroke={style.stroke}
-                    strokeWidth={style.strokeWidth}
+                    strokeWidth={strokeWidth}
                     strokeDasharray={style.strokeDasharray}
                     connectNulls
+                    isAnimationActive={false}
                     dot={(props) =>
                       renderMarker({
                         cx: props.cx,
                         cy: props.cy,
                         fill: style.stroke,
                         shape: style.shape,
+                        r: emphasized ? 5 : 4,
                       })
                     }
-                    activeDot={{ r: 6 }}
+                    activeDot={{ r: emphasized ? 7 : 6 }}
                   >
                     {options.showDataLabels && (
                       <LabelList
@@ -693,6 +946,7 @@ export function HybridChart() {
                 const s = seriesAxisByKey[key];
                 const style = styleMap[key];
                 const axisId = useDualAxes ? (s?.yAxisId ?? 'left') : 'left';
+                const emphasized = emphasizedKeys.has(key);
                 return (
                   <Line
                     key={`${TREND_KEY_PREFIX}${key}`}
@@ -701,11 +955,12 @@ export function HybridChart() {
                     dataKey={`${TREND_KEY_PREFIX}${key}`}
                     name={`추세선 [${s?.label ?? key}]`}
                     stroke={style?.stroke ?? '#6b7280'}
-                    strokeWidth={2}
+                    strokeWidth={emphasized ? 2 : 1}
                     strokeDasharray="8 4"
                     dot={false}
                     connectNulls
                     legendType="none"
+                    isAnimationActive={false}
                   />
                 );
               })}
@@ -730,12 +985,33 @@ export function HybridChart() {
             )}
           </div>
         </div>
-        {annualEvents.length > 0 && (
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            파란 밑줄 연도에 마우스를 올리면 해당 연도 변동사항을 확인할 수
-            있습니다.
-          </p>
-        )}
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          범례 항목을 클릭하면 해당 선을 굵게 강조합니다. 다시 클릭하면
+          해제됩니다.
+          {corrOpen
+            ? ' 상관계수 분석이 켜져 있으면 범례를 아래 칸으로 드래그할 수 있습니다.'
+            : ''}
+          {annualEvents.length > 0
+            ? ' 파란 밑줄 연도에 마우스를 올리면 해당 연도 변동사항을 확인할 수 있습니다.'
+            : ''}
+        </p>
+        {corrOpen ? (
+          <CorrelationPanel
+            slots={corrSlots}
+            items={series.map((s) => ({
+              key: s.key,
+              label: s.label,
+              color: styleMap[s.key]?.stroke,
+            }))}
+            data={originalData}
+            hoverSlot={corrHoverSlot}
+            onClear={clearCorrSlot}
+            onChipPointerDown={(index, item, e) =>
+              beginCorrPointer(item, index, e)
+            }
+          />
+        ) : null}
+        {corrGhost ? <CorrDragGhost drag={corrGhost} /> : null}
       </CardContent>
     </Card>
   );

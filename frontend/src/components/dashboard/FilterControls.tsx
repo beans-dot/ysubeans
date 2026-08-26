@@ -1,6 +1,6 @@
 'use client';
 
-import { Search } from 'lucide-react';
+import { RotateCcw, Search } from 'lucide-react';
 import { MIN_AVAILABLE_YEAR } from '@/store/useDashboardStore';
 import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ export function FilterControls() {
   const loading = useAnalysisStore((s) => s.loading);
   const selectedTargets = useAnalysisStore((s) => s.selectedTargets);
   const selectedMetrics = useAnalysisStore((s) => s.selectedMetrics);
+  const resetSelections = useAnalysisStore((s) => s.resetSelections);
   const analysisScope = useAnalysisStore((s) => s.analysisScope);
   const relativeExpand = useAnalysisStore((s) => s.relativeExpand);
 
@@ -50,8 +51,22 @@ export function FilterControls() {
 
   return (
     <Card className="sticky top-20">
-      <CardHeader>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>조회 조건</CardTitle>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={resetSelections}
+          disabled={
+            selectedTargets.length === 0 && selectedMetrics.length === 0
+          }
+          title="대상 선택과 지표 선택을 비웁니다"
+        >
+          <RotateCcw className="mr-1 h-3 w-3" />
+          조건 초기화
+        </Button>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>

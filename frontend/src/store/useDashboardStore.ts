@@ -83,6 +83,8 @@ export interface DashboardState {
   ) => void;
   clearTargets: () => void;
   clearMetrics: () => void;
+  /** 대상·지표 선택과 조회 결과만 비움 (연도·차트옵션은 유지) */
+  resetSelections: () => void;
   setYears: (years: number[]) => void;
   deletePreset: (presetId: number) => Promise<void>;
   setChartOption: <K extends keyof ChartOptions>(
@@ -347,6 +349,13 @@ export function createAnalysisStore(analysisScope: AnalysisScope) {
 
   clearTargets: () => set({ selectedTargets: [] }),
   clearMetrics: () => set({ selectedMetrics: [] }),
+  resetSelections: () =>
+    set({
+      selectedTargets: [],
+      selectedMetrics: [],
+      pivot: null,
+      relativeScales: [],
+    }),
   setYears: (years) => set({ years: filterAvailableYears(years) }),
   deletePreset: async (presetId) => {
     await api.delete(`/presets/${presetId}`);

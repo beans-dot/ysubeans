@@ -1,72 +1,52 @@
-// [강제] Random Color 절대 금지. 배열 초과 시 Modulo 순환 참조.
+export const MAX_CHART_SERIES = 36;
 
-export const YEONSUNG_COLORS = [
-  '#4AA5C4',
-  '#0F766E',
-  '#3B82F6',
-  '#0369A1',
-  '#4F46E5',
-  '#0891B2',
-  '#2563EB',
-  '#0D9488',
-] as const;
+/** 기존 연성 3 / 타대 2 의 50% */
+export const CHART_STROKE_WIDTH = {
+  yeonsungBase: 1.5,
+  othersBase: 1,
+  yeonsungEmphasized: 3,
+  othersEmphasized: 2,
+} as const;
 
-export const OTHERS_COLORS = [
-  '#C2410C',
-  '#EAB308',
-  '#B91C1C',
-  '#D97706',
-  '#BE123C',
-  '#F59E0B',
-  '#991B1B',
-  '#EA580C',
-] as const;
+/**
+ * 지표 1: 파랑 → 초록 → 보라
+ * 지표 2: 빨강 → 주황 → 노랑
+ * 이후 지표는 같은 순서를 채도 70%(−30%)로 반복
+ */
+const HUE_FAMILIES: readonly (readonly number[])[] = [
+  [210, 145, 280],
+  [0, 28, 48],
+];
 
-export type MarkerShape = 'circle' | 'triangle' | 'square' | 'diamond' | 'wye';
+/** 색량 100% / 60% / 36% → 흰색 혼합 비율 */
+const WHITE_MIX = [0, 0.4, 0.64] as const;
+const SAT_FACTORS = [1, 0.7] as const;
 
-export const MARKER_SHAPES: MarkerShape[] = [
+export const MARKER_SHAPES = [
   'circle',
   'triangle',
   'square',
   'diamond',
   'wye',
-];
+] as const;
 
-// 'solid'는 undefined 처리
+export type MarkerShape = (typeof MARKER_SHAPES)[number];
+
 export const LINE_DASHES = ['solid', '5 5', '10 5', '3 3'] as const;
 
 export interface LineStyle {
   stroke: string;
   strokeWidth: number;
+  emphasizedStrokeWidth: number;
   strokeDasharray: string | undefined;
   activeDot: { shape: MarkerShape };
   shape: MarkerShape;
 }
 
-/**
- * [할당 함수] 색/마커/선을 배열에서 각각
- *   color : index % 8
- *   shape : Math.floor(index / 8) % 5
- *   dash  : Math.floor(index / 40) % 4
- * 로 연산하여 순환 할당.
- */
-export function getLineStyle(isYeonsung: boolean, index: number): LineStyle {
-  const palette = isYeonsung ? YEONSUNG_COLORS : OTHERS_COLORS;
-
-  const stroke = palette[index % 8];
-  const shape = MARKER_SHAPES[Math.floor(index / 8) % 5];
-  const dashToken = LINE_DASHES[Math.floor(index / 40) % 4];
-
-  // 'solid'는 strokeDasharray undefined로 처리
-  const strokeDasharray = dashToken === 'solid' ? undefined : dashToken;
-
-  return {
-    stroke,
-    strokeWidth: isYeonsung ? 3 : 2,
-    strokeDasharray,
-    activeDot: { shape },
-    shape,
-  };
+export interface SeriesStyleAssignment {
+  styles: Record<string, LineStyle>;
+  visibleKeys: string[];
+  truncated: boolean;
 }
 
 function hslToHex(h: number, s: number, l: number): string {
@@ -93,67 +73,111 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
-/**
- * 팔레트 소진 시 그룹 계열(연성=한색, 타대학=난색) 내에서
- * 색상환을 순회하며 아직 사용하지 않은 고유 색을 생성.
- */
-function pickUniqueColor(
-  used: Set<string>,
-  isYeonsung: boolean,
-  seed: number,
-): string {
-  const hueStart = isYeonsung ? 185 : 0; // 연성: 185~260(청록~파랑), 타대학: 0~55(빨강~주황/노랑)
-  const hueSpan = isYeonsung ? 75 : 55;
-  for (let i = 0; i < 200; i++) {
-    const hue = hueStart + (((seed + i) * 17) % hueSpan);
-    const sat = 72 - (i % 3) * 12;
-    const light = 40 + (i % 5) * 7;
-    const color = hslToHex(hue, sat, light);
-    if (!used.has(color)) return color;
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+function mixHexWithWhite(hex: string, t: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const k = Math.min(1, Math.max(0, t));
+  const mix = (c: number) => Math.round(c + (255 - c) * k);
+  return `#${[mix(r), mix(g), mix(b)]
+    .map((v) => v.toString(16).padStart(2, '0'))
+    .join('')}`.toUpperCase();
+}
+
+function colorForSlot(metricIndex: number, targetIndex: number): string {
+  const family = HUE_FAMILIES[metricIndex % 2];
+  const satCycle = Math.floor(metricIndex / 2) + Math.floor(targetIndex / 9);
+  const sat = 78 * SAT_FACTORS[satCycle % SAT_FACTORS.length];
+  const hue = family[Math.floor(targetIndex / 3) % family.length];
+  const base = hslToHex(hue, sat, 40);
+  return mixHexWithWhite(base, WHITE_MIX[targetIndex % 3]);
+}
+
+export function orderSeriesForChart<
+  T extends { key: string; isYeonsung: boolean; metricId: number },
+>(series: T[]): T[] {
+  const metricOrder: number[] = [];
+  for (const s of series) {
+    if (!metricOrder.includes(s.metricId)) metricOrder.push(s.metricId);
   }
-  return hslToHex(hueStart + (seed % hueSpan), 70, 45);
+  const ordered: T[] = [];
+  for (const metricId of metricOrder) {
+    const group = series.filter((s) => s.metricId === metricId);
+    ordered.push(
+      ...group.filter((s) => s.isYeonsung),
+      ...group.filter((s) => !s.isYeonsung),
+    );
+  }
+  return ordered;
 }
 
 /**
- * 전체 시리즈에 대해 색상이 절대 중복되지 않도록 스타일을 일괄 할당.
- * 색: 그룹 팔레트 우선 → 소진/충돌 시 계열 색상환에서 고유 색 생성
- * 마커/선 종류: 그룹 내 순번으로 순환하여 추가 식별성 확보
+ * 지표별로 다른 색 계열, 조회대상은 연성대를 가장 진하게 두고 3개까지 밝기를 낮춘다.
+ * 6색 × 3밝기 = 18선, 그다음 채도 −30%로 18선. 최대 36선.
  */
 export function buildSeriesStyleMap(
-  series: Array<{ key: string; isYeonsung: boolean }>,
-): Record<string, LineStyle> {
-  const used = new Set<string>();
-  const map: Record<string, LineStyle> = {};
-  let yIdx = 0;
-  let oIdx = 0;
+  series: Array<{ key: string; isYeonsung: boolean; metricId: number }>,
+): SeriesStyleAssignment {
+  const ordered = orderSeriesForChart(series);
+  const visible = ordered.slice(0, MAX_CHART_SERIES);
+  const styles: Record<string, LineStyle> = {};
 
-  for (const s of series) {
-    const groupIndex = s.isYeonsung ? yIdx++ : oIdx++;
-    const palette = s.isYeonsung ? YEONSUNG_COLORS : OTHERS_COLORS;
+  const metricOrder: number[] = [];
+  for (const s of visible) {
+    if (!metricOrder.includes(s.metricId)) metricOrder.push(s.metricId);
+  }
 
-    let stroke: string = palette[groupIndex % palette.length];
-    if (used.has(stroke)) {
-      stroke = pickUniqueColor(used, s.isYeonsung, groupIndex);
-    }
-    used.add(stroke);
+  const targetIndexByMetric = new Map<number, number>();
+  for (const s of visible) {
+    const metricIndex = metricOrder.indexOf(s.metricId);
+    const targetIndex = targetIndexByMetric.get(s.metricId) ?? 0;
+    targetIndexByMetric.set(s.metricId, targetIndex + 1);
 
-    const shape =
-      MARKER_SHAPES[Math.floor(groupIndex / palette.length) % MARKER_SHAPES.length];
+    const shape = MARKER_SHAPES[targetIndex % MARKER_SHAPES.length];
     const dashToken =
-      LINE_DASHES[
-        Math.floor(groupIndex / (palette.length * MARKER_SHAPES.length)) %
-          LINE_DASHES.length
-      ];
+      LINE_DASHES[Math.floor(targetIndex / MARKER_SHAPES.length) % LINE_DASHES.length];
     const strokeDasharray = dashToken === 'solid' ? undefined : dashToken;
 
-    map[s.key] = {
-      stroke,
-      strokeWidth: s.isYeonsung ? 3 : 2,
+    styles[s.key] = {
+      stroke: colorForSlot(metricIndex, targetIndex),
+      strokeWidth: s.isYeonsung
+        ? CHART_STROKE_WIDTH.yeonsungBase
+        : CHART_STROKE_WIDTH.othersBase,
+      emphasizedStrokeWidth: s.isYeonsung
+        ? CHART_STROKE_WIDTH.yeonsungEmphasized
+        : CHART_STROKE_WIDTH.othersEmphasized,
       strokeDasharray,
       activeDot: { shape },
       shape,
     };
   }
 
-  return map;
+  return {
+    styles,
+    visibleKeys: visible.map((s) => s.key),
+    truncated: ordered.length > MAX_CHART_SERIES,
+  };
+}
+
+/** @deprecated HybridChart는 buildSeriesStyleMap을 사용 */
+export function getLineStyle(isYeonsung: boolean, index: number): LineStyle {
+  return {
+    stroke: colorForSlot(isYeonsung ? 0 : 1, index),
+    strokeWidth: isYeonsung
+      ? CHART_STROKE_WIDTH.yeonsungBase
+      : CHART_STROKE_WIDTH.othersBase,
+    emphasizedStrokeWidth: isYeonsung
+      ? CHART_STROKE_WIDTH.yeonsungEmphasized
+      : CHART_STROKE_WIDTH.othersEmphasized,
+    strokeDasharray: undefined,
+    activeDot: { shape: MARKER_SHAPES[index % MARKER_SHAPES.length] },
+    shape: MARKER_SHAPES[index % MARKER_SHAPES.length],
+  };
 }
