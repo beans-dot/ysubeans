@@ -81,6 +81,21 @@ export function sanitizeKpiPoEvals(
   return Object.keys(out).length > 0 ? out : null;
 }
 
+export function sanitizeKpiPoComments(
+  raw: unknown,
+): Record<string, string> | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out: Record<string, string> = {};
+  for (const [code, text] of Object.entries(raw as Record<string, unknown>)) {
+    const key = asTrimmed(code, 30);
+    const value = asTrimmed(text, MAX_TEXT);
+    if (!key || !value) continue;
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export function sanitizeSurveyItems(raw: unknown): SpSurveyItemJson[] | null {
   if (raw === null || raw === undefined) return null;
   if (!Array.isArray(raw)) return null;
@@ -105,6 +120,7 @@ export function sanitizeSurveyPlans(raw: unknown): SpSurveyPlanJson[] | null {
     return {
       id: asId(r.id, `p-${index + 1}`),
       category: asTrimmed(r.category, MAX_NAME),
+      area: asTrimmed(r.area, MAX_NAME),
       request: asTrimmed(r.request, MAX_TEXT),
       planGrade: asGrade(r.planGrade, SP_SURVEY_PLAN_GRADES) ?? '',
       planText: asTrimmed(r.planText, MAX_TEXT),

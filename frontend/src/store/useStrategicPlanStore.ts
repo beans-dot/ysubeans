@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { notifyAutoSaved } from '@/components/admin/AutoSaveToast';
 import {
   fetchSpBudgets,
   fetchSpEvaluations,
@@ -72,9 +73,16 @@ export function budgetKey(
   return `${taskCode}::${subtaskCode}::${fundSourceId}`;
 }
 
+/** n년 3월 1일 ~ n+1년 2월 말일(윤달 포함) → n학년도 */
+export function currentAcademicYear(now = new Date()): number {
+  const year = now.getFullYear();
+  return now.getMonth() < 2 ? year - 1 : year;
+}
+
 function defaultYear(years: number[]): number {
-  if (years.length === 0) return new Date().getFullYear();
-  const current = new Date().getFullYear();
+  const current = currentAcademicYear();
+  if (years.length === 0) return current;
+  if (years.includes(current)) return current;
   const past = years.filter((y) => y <= current);
   return past.length > 0 ? Math.max(...past) : years[0];
 }
@@ -133,7 +141,7 @@ interface StrategicPlanState {
     kind: 'budget' | 'settlement',
     value: string,
   ) => void;
-  copyPreviousYearBudgets: () => Promise<void>;
+  copyPreviousYearBudgets: () => Promise<string | null>;
   setKpiResult: (kpiCode: string, value: string) => void;
   patchVision: (partial: Partial<SpVision>) => void;
 }
@@ -155,7 +163,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   dept: '',
   query: '',
   specializedOnly: false,
-  year: new Date().getFullYear(),
+  year: currentAcademicYear(),
   compareMode: 'jc',
   kpiSort: { key: '', dir: 1 },
 
@@ -201,8 +209,11 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
           surveyFeedback: e.surveyFeedback ?? '',
           taskActivities: e.taskActivities ?? {},
           kpiPoEvals: e.kpiPoEvals ?? {},
+          kpiPoComments: e.kpiPoComments ?? {},
           surveyItems: e.surveyItems ?? [],
           surveyPlans: e.surveyPlans ?? [],
+          surveyItemsNa: e.surveyItemsNa ?? false,
+          surveyPlansNa: e.surveyPlansNa ?? false,
           irEval: e.irEval ?? {},
         };
       }
@@ -292,6 +303,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
       set((s) => ({ pendingSaves: s.pendingSaves + 1 }));
       try {
         await saveSpEvaluation({ taskCode, year, [field]: value });
+        notifyAutoSaved('자동저장 되었습니다.');
       } catch {
         set({ saveError: '자체평가 저장에 실패했습니다.' });
       } finally {
@@ -315,6 +327,9 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
       if (patch.kpiPoEvals) {
         merged.kpiPoEvals = { ...prev.kpiPoEvals, ...patch.kpiPoEvals };
       }
+      if (patch.kpiPoComments) {
+        merged.kpiPoComments = { ...prev.kpiPoComments, ...patch.kpiPoComments };
+      }
       return {
         evaluations: { ...state.evaluations, [taskCode]: merged },
         saveError: null,
@@ -329,6 +344,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
           (payload as Record<string, unknown>)[key] = draft[key];
         }
         await saveSpEvaluation({ taskCode, year, ...payload });
+        notifyAutoSaved('자동저장 되었습니다.');
       } catch {
         set({ saveError: '자체평가 저장에 실패했습니다.' });
       } finally {
@@ -355,6 +371,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
       try {
         const irEval = get().evaluations[taskCode]?.irEval ?? {};
         await saveSpEvaluation({ taskCode, year, irEval });
+        notifyAutoSaved('자동저장 되었습니다.');
       } catch {
         set({ saveError: 'IR평가 저장에 실패했습니다.' });
       } finally {
@@ -404,16 +421,30 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
     set({ saveError: null });
     set((s) => ({ pendingSaves: s.pendingSaves + 1 }));
     try {
-      const prev = await fetchSpBudgets(prevYear);
+      const [prev, prevFunds] = await Promise.all([
+        fetchSpBudgets(prevYear),
+        fetchSpFundSources(false, prevYear),
+      ]);
       const activeIds = new Set(fundSources.map((f) => f.fundSourceId));
+      const skippedFunds = prevFunds.filter(
+        (f) => !activeIds.has(f.fundSourceId),
+      );
+      const skippedNotice =
+        skippedFunds.length > 0
+          ? `폐지된 재원(${skippedFunds.map((f) => f.fundSourceName).join(', ')})은 제외하고 복사하였습니다.`
+          : null;
       const toCopy = prev.filter(
         (b) => b.budgetAmount !== null && activeIds.has(b.fundSourceId),
       );
       if (toCopy.length === 0) {
+        if (skippedNotice) {
+          set({ saveError: null });
+          return skippedNotice;
+        }
         set({
           saveError: `${prevYear}학년도 예산이 없어 복사하지 못했습니다.`,
         });
-        return;
+        return null;
       }
       const next = { ...get().budgets };
       await Promise.all(
@@ -431,8 +462,10 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
         }),
       );
       set({ budgets: next, saveError: null });
+      return skippedNotice;
     } catch {
       set({ saveError: '전년도 예산을 복사하지 못했습니다.' });
+      return null;
     } finally {
       set((s) => ({ pendingSaves: Math.max(0, s.pendingSaves - 1) }));
     }

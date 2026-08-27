@@ -390,6 +390,10 @@ export class UpsertEvaluationDto {
   kpiPoEvals?: Record<string, unknown> | null;
 
   @IsOptional()
+  @IsObject()
+  kpiPoComments?: Record<string, unknown> | null;
+
+  @IsOptional()
   @IsString()
   budgetAdequacy?: string | null;
 
@@ -423,6 +427,14 @@ export class UpsertEvaluationDto {
   @IsOptional()
   @IsArray()
   surveyPlans?: unknown[] | null;
+
+  @IsOptional()
+  @IsBoolean()
+  surveyItemsNa?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  surveyPlansNa?: boolean;
 
   @IsOptional()
   @IsObject()

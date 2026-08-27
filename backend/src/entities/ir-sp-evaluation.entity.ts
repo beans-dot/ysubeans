@@ -28,6 +28,7 @@ export interface SpSurveyItemJson {
 export interface SpSurveyPlanJson {
   id: string;
   category: string;
+  area: string;
   request: string;
   planGrade: string;
   planText: string;
@@ -104,9 +105,13 @@ export class IrSpEvaluation {
   @Column({ name: 'task_activities', type: 'jsonb', nullable: true })
   taskActivities: Record<string, SpEvalActivityJson[]> | null;
 
-  /** ② 성과지표 PO 자체평가 — kpiCode → 등급 */
+  /** ② 성과지표 자체평가 — kpiCode → 등급 */
   @Column({ name: 'kpi_po_evals', type: 'jsonb', nullable: true })
   kpiPoEvals: Record<string, string> | null;
+
+  /** ② 성과지표 자체평가 자유서술 — kpiCode → 텍스트 */
+  @Column({ name: 'kpi_po_comments', type: 'jsonb', nullable: true })
+  kpiPoComments: Record<string, string> | null;
 
   @Column({ name: 'budget_adequacy', type: 'text', nullable: true })
   budgetAdequacy: string | null;
@@ -146,6 +151,14 @@ export class IrSpEvaluation {
 
   @Column({ name: 'survey_plans', type: 'jsonb', nullable: true })
   surveyPlans: SpSurveyPlanJson[] | null;
+
+  /** ⑤ 만족도 세부항목 — 해당 없음 */
+  @Column({ name: 'survey_items_na', type: 'boolean', default: false })
+  surveyItemsNa: boolean;
+
+  /** ⑤ 대학만족도조사 외 조사 — 해당 없음 */
+  @Column({ name: 'survey_plans_na', type: 'boolean', default: false })
+  surveyPlansNa: boolean;
 
   /** IR평가 모드에서 작성한 첨삭·추가 의견 */
   @Column({ name: 'ir_eval', type: 'jsonb', nullable: true })

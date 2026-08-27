@@ -1,5 +1,6 @@
 export {
   evaluationFilledCount,
+  evaluationUnwrittenCount,
   evaluationStatus,
   budgetStatus,
   SP_STATUS_LABEL,

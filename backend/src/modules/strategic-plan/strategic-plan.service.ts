@@ -49,6 +49,7 @@ import {
 import { sanitizeVisionHtml } from './sanitize-vision-html';
 import {
   sanitizeIrEval,
+  sanitizeKpiPoComments,
   sanitizeKpiPoEvals,
   sanitizeSurveyItems,
   sanitizeSurveyPlans,
@@ -225,6 +226,11 @@ export class StrategicPlanService implements OnModuleInit {
       await this.structure.migrateLegacyCodes();
     } catch {
       // 컬럼 추가 전 기동이면 synchronize 이후 다음 기동에서 처리
+    }
+    try {
+      await this.structure.syncFundLiveIntervals();
+    } catch {
+      // 버전 테이블이 아직 없으면 건너뛴다.
     }
   }
 
@@ -524,14 +530,19 @@ export class StrategicPlanService implements OnModuleInit {
     const rows = await this.fundSourceRepo.find({
       order: { displayOrder: 'ASC', fundSourceId: 'ASC' },
     });
+    const versions =
+      year != null ? await this.structure.versionsFor('fund') : null;
     const live = rows.filter((f) => {
-      const active =
-        year == null
-          ? f.abolishedFrom == null
-          : this.structure.isActiveAt(f.effectiveFrom, f.abolishedFrom, year);
-      if (!active) return false;
+      if (year != null) {
+        return this.structure.activeInYear(
+          versions?.get(String(f.fundSourceId)),
+          year,
+          f.effectiveFrom,
+          f.abolishedFrom,
+        );
+      }
       if (includeInactive) return true;
-      return f.isActive;
+      return f.abolishedFrom == null && f.isActive;
     });
     const out: Array<{
       fundSourceId: number;
@@ -553,7 +564,15 @@ export class StrategicPlanService implements OnModuleInit {
         fundSourceId: row.fundSourceId,
         fundSourceName: String(payload?.fundSourceName ?? row.fundSourceName),
         displayOrder: row.displayOrder,
-        isActive: row.isActive,
+        isActive:
+          year != null
+            ? this.structure.activeInYear(
+                versions?.get(String(row.fundSourceId)),
+                year,
+                row.effectiveFrom,
+                row.abolishedFrom,
+              )
+            : row.abolishedFrom == null && row.isActive,
         effectiveFrom: row.effectiveFrom,
         abolishedFrom: row.abolishedFrom,
       });
@@ -627,11 +646,20 @@ export class StrategicPlanService implements OnModuleInit {
     if (dto.kpiPoEvals !== undefined) {
       row.kpiPoEvals = sanitizeKpiPoEvals(dto.kpiPoEvals);
     }
+    if (dto.kpiPoComments !== undefined) {
+      row.kpiPoComments = sanitizeKpiPoComments(dto.kpiPoComments);
+    }
     if (dto.surveyItems !== undefined) {
       row.surveyItems = sanitizeSurveyItems(dto.surveyItems);
     }
     if (dto.surveyPlans !== undefined) {
       row.surveyPlans = sanitizeSurveyPlans(dto.surveyPlans);
+    }
+    if (dto.surveyItemsNa !== undefined) {
+      row.surveyItemsNa = Boolean(dto.surveyItemsNa);
+    }
+    if (dto.surveyPlansNa !== undefined) {
+      row.surveyPlansNa = Boolean(dto.surveyPlansNa);
     }
     if (dto.irEval !== undefined) {
       row.irEval = sanitizeIrEval(dto.irEval);
@@ -649,9 +677,17 @@ export class StrategicPlanService implements OnModuleInit {
     if (!fund) {
       throw new NotFoundException('재원 유형을 찾을 수 없습니다.');
     }
-    if (!fund.isActive) {
+    if (
+      !(await this.structure.isLineageActiveAt(
+        'fund',
+        String(fund.fundSourceId),
+        dto.year,
+        fund.effectiveFrom,
+        fund.abolishedFrom,
+      ))
+    ) {
       throw new BadRequestException(
-        `「${fund.fundSourceName}」은 비활성 재원이라 입력할 수 없습니다.`,
+        `「${fund.fundSourceName}」은 ${dto.year}학년도에 사용할 수 없는 재원입니다.`,
       );
     }
 

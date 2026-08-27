@@ -50,6 +50,7 @@ export function emptySurveyPlan(): SpSurveyPlan {
   return {
     id: newEvalRowId('p'),
     category: '',
+    area: '',
     request: '',
     planGrade: '',
     planText: '',
@@ -141,60 +142,80 @@ function surveyItemFilled(row: SpSurveyItem) {
 function surveyPlanFilled(row: SpSurveyPlan) {
   return (
     row.category.trim() !== '' ||
+    (row.area ?? '').trim() !== '' ||
     row.request.trim() !== '' ||
     row.planGrade.trim() !== '' ||
     row.planText.trim() !== ''
   );
 }
 
-const DEPT_TEXT_FIELDS: Array<keyof SpEvaluationDraft> = [
-  'deptSummary',
-  'deptAnalysis',
-  'budgetAdequacy',
-  'processAdequacy',
-  'kpiAdequacy',
-  'surveyAnalysis',
-  'surveyFeedback',
-];
+/** 자체평가 ①~⑤. 비어 있으면 미작성 5. */
+export const EVAL_SECTION_COUNT = 5;
 
-export function evaluationFilledCount(draft: SpEvaluationDraft | undefined) {
-  if (!draft) return 0;
+function section1Filled(draft: SpEvaluationDraft) {
+  return Object.values(draft.taskActivities ?? {}).some((rows) =>
+    rows.some(activityFilled),
+  );
+}
+
+function section2Filled(draft: SpEvaluationDraft) {
+  return (
+    Object.values(draft.kpiPoEvals ?? {}).some((v) => filledText(v)) ||
+    Object.values(draft.kpiPoComments ?? {}).some((v) => filledText(v))
+  );
+}
+
+function section3Filled(draft: SpEvaluationDraft) {
+  return filledText(draft.deptSummary) || filledText(draft.deptAnalysis);
+}
+
+function section4Filled(draft: SpEvaluationDraft) {
+  return (
+    filledText(draft.budgetAdequacy) ||
+    filledText(draft.budgetAdequacyGrade) ||
+    filledText(draft.processAdequacy) ||
+    filledText(draft.processAdequacyGrade) ||
+    filledText(draft.kpiAdequacy) ||
+    filledText(draft.kpiAdequacyGrade)
+  );
+}
+
+function section5Filled(draft: SpEvaluationDraft) {
+  if (draft.surveyItemsNa || draft.surveyPlansNa) return true;
+  return (
+    (draft.surveyItems ?? []).some(surveyItemFilled) ||
+    (draft.surveyPlans ?? []).some(surveyPlanFilled)
+  );
+}
+
+export function evaluationUnwrittenCount(
+  draft: SpEvaluationDraft | undefined,
+) {
+  if (!draft) return EVAL_SECTION_COUNT;
   let n = 0;
-  for (const key of DEPT_TEXT_FIELDS) {
-    if (filledText(draft[key] as string | undefined)) n += 1;
-  }
-  for (const key of [
-    'budgetAdequacyGrade',
-    'processAdequacyGrade',
-    'kpiAdequacyGrade',
-  ] as const) {
-    if (filledText(draft[key])) n += 1;
-  }
-  if (Object.values(draft.kpiPoEvals ?? {}).some((v) => filledText(v))) n += 1;
-  if (Object.values(draft.taskActivities ?? {}).some((rows) => rows.some(activityFilled))) {
-    n += 1;
-  }
-  if ((draft.surveyItems ?? []).some(surveyItemFilled)) n += 1;
-  if ((draft.surveyPlans ?? []).some(surveyPlanFilled)) n += 1;
+  if (!section1Filled(draft)) n += 1;
+  if (!section2Filled(draft)) n += 1;
+  if (!section3Filled(draft)) n += 1;
+  if (!section4Filled(draft)) n += 1;
+  if (!section5Filled(draft)) n += 1;
   return n;
 }
 
+export function evaluationFilledCount(draft: SpEvaluationDraft | undefined) {
+  return EVAL_SECTION_COUNT - evaluationUnwrittenCount(draft);
+}
+
 /**
- * 완료 = 주요 성과·자체분석과 ④ 자체점검 3항목 등급이 모두 있는 상태.
+ * 완료 = ①~⑤ 모두 입력이 있는 상태(⑤는 해당 없음 포함).
  * IR 평가는 완료 조건에 넣지 않는다.
  */
 export function evaluationStatus(
   draft: SpEvaluationDraft | undefined,
 ): SpWriteStatus {
-  const count = evaluationFilledCount(draft);
-  if (count === 0) return 'none';
-  const complete =
-    filledText(draft?.deptSummary) &&
-    filledText(draft?.deptAnalysis) &&
-    filledText(draft?.budgetAdequacyGrade) &&
-    filledText(draft?.processAdequacyGrade) &&
-    filledText(draft?.kpiAdequacyGrade);
-  return complete ? 'done' : 'part';
+  const unwritten = evaluationUnwrittenCount(draft);
+  if (unwritten === EVAL_SECTION_COUNT) return 'none';
+  if (unwritten === 0) return 'done';
+  return 'part';
 }
 
 export function irEvalHasContent(ir: SpIrEvalOverlay | undefined) {

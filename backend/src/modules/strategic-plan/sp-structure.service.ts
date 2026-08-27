@@ -214,6 +214,67 @@ export class SpStructureService {
     return activeAt(effectiveFrom, abolishedFrom, year);
   }
 
+  /** 버전 이력이 있으면 그 구간으로, 없으면 live effective/abolished로 판단한다. */
+  activeInYear(
+    versions: IrSpItemVersion[] | undefined,
+    year: number,
+    fallbackFrom: number,
+    fallbackAbolished: number | null,
+  ) {
+    if (!versions || versions.length === 0) {
+      return activeAt(fallbackFrom, fallbackAbolished, year);
+    }
+    return versions.some((row) =>
+      versionCovers(row.effectiveFrom, row.effectiveTo, year),
+    );
+  }
+
+  async versionsFor(kind: SpNodeKind): Promise<Map<string, IrSpItemVersion[]>> {
+    const rows = await this.versionRepo.find({ where: { kind } });
+    const map = new Map<string, IrSpItemVersion[]>();
+    for (const row of rows) {
+      const list = map.get(row.lineageId) ?? [];
+      list.push(row);
+      map.set(row.lineageId, list);
+    }
+    return map;
+  }
+
+  async isLineageActiveAt(
+    kind: SpNodeKind,
+    lineageId: string,
+    year: number,
+    fallbackFrom: number,
+    fallbackAbolished: number | null,
+  ) {
+    const rows = await this.versionRepo.find({ where: { kind, lineageId } });
+    return this.activeInYear(rows, year, fallbackFrom, fallbackAbolished);
+  }
+
+  /** 폐지 후 같은 이름으로 다시 신설된 재원의 live 구간을 열린 버전에 맞춘다. */
+  async syncFundLiveIntervals() {
+    const funds = await this.fundRepo.find();
+    const versions = await this.versionsFor('fund');
+    for (const fund of funds) {
+      const rows = versions.get(String(fund.fundSourceId)) ?? [];
+      const open = rows
+        .filter((row) => row.effectiveTo == null)
+        .sort((a, b) => b.effectiveFrom - a.effectiveFrom)[0];
+      if (!open) continue;
+      if (
+        fund.effectiveFrom === open.effectiveFrom &&
+        fund.abolishedFrom == null &&
+        fund.isActive
+      ) {
+        continue;
+      }
+      fund.effectiveFrom = open.effectiveFrom;
+      fund.abolishedFrom = null;
+      fund.isActive = true;
+      await this.fundRepo.save(fund);
+    }
+  }
+
   async overlayPayload(
     kind: SpNodeKind,
     lineageId: string,
@@ -683,7 +744,7 @@ export class SpStructureService {
           abolishedFrom: null,
         });
     row.goalName = input.name.trim();
-    row.effectiveFrom = exists ? exists.effectiveFrom : input.year;
+    row.effectiveFrom = input.year;
     row.abolishedFrom = null;
     await this.goalRepo.save(row);
     const after = this.goalPayload(row);
@@ -731,7 +792,7 @@ export class SpStructureService {
     row.goalId = goal.goalId;
     row.strategyName = input.name.trim();
     row.displayOrder = exists?.displayOrder ?? count;
-    row.effectiveFrom = exists ? exists.effectiveFrom : input.year;
+    row.effectiveFrom = input.year;
     row.abolishedFrom = null;
     await this.strategyRepo.save(row);
     const after = this.strategyPayload(row);
@@ -796,7 +857,7 @@ export class SpStructureService {
     row.isSpecialized = input.isSpecialized ?? false;
     row.primaryDept = input.primaryDept?.trim() || null;
     row.displayOrder = exists?.displayOrder ?? count;
-    row.effectiveFrom = exists ? exists.effectiveFrom : input.year;
+    row.effectiveFrom = input.year;
     row.abolishedFrom = null;
     await this.taskRepo.save(row);
     const after = this.taskPayload(row);
@@ -860,7 +921,7 @@ export class SpStructureService {
     row.purpose = input.purpose?.trim() || null;
     row.method = input.method?.trim() || null;
     row.displayOrder = exists?.displayOrder ?? siblings.length;
-    row.effectiveFrom = exists ? exists.effectiveFrom : input.year;
+    row.effectiveFrom = input.year;
     row.abolishedFrom = null;
     await this.subtaskRepo.save(row);
     const after = this.subtaskPayload(row);
@@ -937,7 +998,7 @@ export class SpStructureService {
     row.primaryDept = input.primaryDept?.trim() || task.primaryDept;
     row.suffix = suffix;
     row.displayOrder = exists?.displayOrder ?? count;
-    row.effectiveFrom = exists ? exists.effectiveFrom : input.year;
+    row.effectiveFrom = input.year;
     row.abolishedFrom = null;
     await this.kpiRepo.save(row);
     const after = this.kpiPayload(row);
@@ -985,7 +1046,7 @@ export class SpStructureService {
     row.fundSourceName = name;
     row.displayOrder = input.displayOrder ?? (max?.max ?? -1) + 1;
     row.isActive = true;
-    row.effectiveFrom = dup ? dup.effectiveFrom : input.year;
+    row.effectiveFrom = input.year;
     row.abolishedFrom = null;
     await this.fundRepo.save(row);
     const after = this.fundPayload(row);

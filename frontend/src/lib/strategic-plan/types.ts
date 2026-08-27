@@ -172,6 +172,7 @@ export interface SpEvaluation {
   surveyFeedback: string | null;
   taskActivities: Record<string, SpEvalActivity[]> | null;
   kpiPoEvals: Record<string, string> | null;
+  kpiPoComments: Record<string, string> | null;
   budgetAdequacy: string | null;
   budgetAdequacyGrade: string | null;
   processAdequacy: string | null;
@@ -180,6 +181,8 @@ export interface SpEvaluation {
   kpiAdequacyGrade: string | null;
   surveyItems: SpSurveyItem[] | null;
   surveyPlans: SpSurveyPlan[] | null;
+  surveyItemsNa?: boolean;
+  surveyPlansNa?: boolean;
   irEval: SpIrEvalOverlay | null;
   updatedBy: string | null;
 }
@@ -214,6 +217,7 @@ export interface SpSurveyItem {
 export interface SpSurveyPlan {
   id: string;
   category: string;
+  area?: string;
   request: string;
   planGrade: string;
   planText: string;
@@ -262,8 +266,11 @@ export interface SpEvaluationDraft {
   surveyFeedback?: string;
   taskActivities?: Record<string, SpEvalActivity[]>;
   kpiPoEvals?: Record<string, string>;
+  kpiPoComments?: Record<string, string>;
   surveyItems?: SpSurveyItem[];
   surveyPlans?: SpSurveyPlan[];
+  surveyItemsNa?: boolean;
+  surveyPlansNa?: boolean;
   irEval?: SpIrEvalOverlay;
 }
 

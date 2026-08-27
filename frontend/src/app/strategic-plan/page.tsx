@@ -1,6 +1,7 @@
 'use client';
 
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { AutoSaveToastHost } from '@/components/admin/AutoSaveToast';
 import { StrategicPlanDashboard } from '@/components/strategic-plan/StrategicPlanDashboard';
 
 export default function StrategicPlanPage() {
@@ -11,6 +12,7 @@ export default function StrategicPlanPage() {
         <div className="sp-root">
           <StrategicPlanDashboard />
         </div>
+        <AutoSaveToastHost />
       </div>
     </AuthGuard>
   );

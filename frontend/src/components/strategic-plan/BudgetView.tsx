@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Copy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -138,11 +138,18 @@ export function BudgetView({
     (s) => s.copyPreviousYearBudgets,
   );
   const [copying, setCopying] = useState(false);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCopyNotice(null);
+  }, [year]);
 
   const copyLastYear = async () => {
     setCopying(true);
+    setCopyNotice(null);
     try {
-      await copyPreviousYearBudgets();
+      const notice = await copyPreviousYearBudgets();
+      if (notice) setCopyNotice(notice);
     } finally {
       setCopying(false);
     }
@@ -227,6 +234,12 @@ export function BudgetView({
           </span>
         </div>
       </div>
+
+      {copyNotice && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          {copyNotice}
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-4">

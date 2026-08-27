@@ -156,7 +156,13 @@ export function PlanFundSourceManager() {
                 className="h-8 max-w-xs"
                 aria-label={`${fund.fundSourceName} 이름`}
               />
-              {!fund.isActive && <Badge variant="secondary">폐지</Badge>}
+              {!fund.isActive || fund.abolishedFrom != null ? (
+                <Badge variant="secondary">
+                  {fund.abolishedFrom
+                    ? `${fund.abolishedFrom}학년도부터 폐지`
+                    : '폐지'}
+                </Badge>
+              ) : null}
               <div className="ml-auto flex items-center gap-1">
                 <Button
                   size="sm"

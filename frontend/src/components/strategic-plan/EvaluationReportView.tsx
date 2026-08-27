@@ -65,14 +65,11 @@ function DualEvalBox({
   itemTitle,
   dept,
   ir,
-  irGrade,
 }: {
   itemTitle?: string;
   dept: ReactNode;
   ir?: string | null;
-  irGrade?: string | null;
 }) {
-  const grade = (irGrade ?? '').trim();
   return (
     <div className="space-y-2 rounded-md border p-3">
       {itemTitle ? <p className="font-bold">{itemTitle}</p> : null}
@@ -81,7 +78,7 @@ function DualEvalBox({
         {dept}
       </div>
       <div data-eval-ir="1" className="space-y-1">
-        <p className="font-bold">[IR 평가]{grade ? ` · ${grade}` : ''}</p>
+        <p className="font-bold">[IR 평가]</p>
         <EvalText value={ir} />
       </div>
     </div>
@@ -190,10 +187,12 @@ function KpiTable({
   task,
   year,
   poEvals,
+  poComments,
 }: {
   task: SpTask;
   year: number;
   poEvals: Record<string, string> | undefined;
+  poComments: Record<string, string> | undefined;
 }) {
   const kpis = useStrategicPlanStore((s) => s.tree?.kpis ?? []);
   const rows = task.kpiCodes
@@ -213,7 +212,7 @@ function KpiTable({
             <th className="px-2 py-1.5 text-left font-bold">{year} 목표</th>
             <th className="px-2 py-1.5 text-left font-bold">{year} 실적</th>
             <th className="px-2 py-1.5 text-left font-bold">달성률</th>
-            <th className="px-2 py-1.5 text-left font-bold">PO 자체평가</th>
+            <th className="px-2 py-1.5 text-left font-bold">자체평가</th>
           </tr>
         </thead>
         <tbody>
@@ -221,8 +220,10 @@ function KpiTable({
             const target = kpi.targets[year] ?? null;
             const actual = kpi.results[year] ?? null;
             const rate = achievementRate(actual, target);
+            const grade = (poEvals?.[kpi.kpiCode] ?? '').trim();
+            const comment = (poComments?.[kpi.kpiCode] ?? '').trim();
             return (
-              <tr key={kpi.kpiCode} className="border-b last:border-b-0">
+              <tr key={kpi.kpiCode} className="border-b last:border-b-0 align-top">
                 <td className="px-2 py-1.5">{kpi.kpiCode}</td>
                 <td className="px-2 py-1.5">
                   {kpi.kpiName}
@@ -249,7 +250,18 @@ function KpiTable({
                 >
                   {rate === null ? '–' : `${fmt1(rate)}%`}
                 </td>
-                <td className="px-2 py-1.5">{poEvals?.[kpi.kpiCode] || '–'}</td>
+                <td className="px-2 py-1.5">
+                  {!grade && !comment ? (
+                    '–'
+                  ) : (
+                    <>
+                      {grade ? <p className="font-bold">{grade}</p> : null}
+                      {comment ? (
+                        <p className="mt-1 whitespace-pre-wrap">{comment}</p>
+                      ) : null}
+                    </>
+                  )}
+                </td>
               </tr>
             );
           })}
@@ -276,9 +288,15 @@ function SurveyItemsTable({ items }: { items: SpSurveyItem[] }) {
         <thead className="border-b bg-muted/50">
           <tr>
             <th className="px-2 py-1.5 text-left font-bold">만족도세부항목명</th>
-            <th className="px-2 py-1.5 text-left font-bold">전년도 달성값</th>
-            <th className="px-2 py-1.5 text-left font-bold">올해 달성값</th>
-            <th className="px-2 py-1.5 text-left font-bold">전년대비 향상률</th>
+            <th className="px-2 py-1.5 text-right font-bold whitespace-nowrap">
+              전년도 달성값
+            </th>
+            <th className="px-2 py-1.5 text-right font-bold whitespace-nowrap">
+              올해 달성값
+            </th>
+            <th className="px-2 py-1.5 text-right font-bold whitespace-nowrap">
+              전년대비 향상률
+            </th>
             <th className="px-2 py-1.5 text-left font-bold">자체평가</th>
           </tr>
         </thead>
@@ -311,6 +329,7 @@ function SurveyPlansTable({ plans }: { plans: SpSurveyPlan[] }) {
   const filled = plans.filter(
     (r) =>
       r.category.trim() ||
+      (r.area ?? '').trim() ||
       r.request.trim() ||
       r.planGrade.trim() ||
       r.planText.trim(),
@@ -324,7 +343,8 @@ function SurveyPlansTable({ plans }: { plans: SpSurveyPlan[] }) {
         <thead className="border-b bg-muted/50">
           <tr>
             <th className="px-2 py-1.5 text-left font-bold">구분</th>
-            <th className="px-2 py-1.5 text-left font-bold">조사 내용 및 요구사항</th>
+            <th className="px-2 py-1.5 text-left font-bold">영역</th>
+            <th className="px-2 py-1.5 text-left font-bold">조사 및 요구사항</th>
             <th className="px-2 py-1.5 text-left font-bold">환류계획</th>
           </tr>
         </thead>
@@ -332,6 +352,7 @@ function SurveyPlansTable({ plans }: { plans: SpSurveyPlan[] }) {
           {filled.map((row) => (
             <tr key={row.id} className="border-b last:border-b-0 align-top">
               <td className="px-2 py-1.5">{row.category || '–'}</td>
+              <td className="px-2 py-1.5">{row.area || '–'}</td>
               <td className="whitespace-pre-wrap px-2 py-1.5">
                 {row.request || '–'}
               </td>
@@ -422,7 +443,14 @@ function ReportCard({
 
           <NumberedSection n={2} title={`성과지표 달성값 — ${year}학년도`}>
             <DualEvalBox
-              dept={<KpiTable task={task} year={year} poEvals={draft?.kpiPoEvals} />}
+              dept={
+                <KpiTable
+                  task={task}
+                  year={year}
+                  poEvals={draft?.kpiPoEvals}
+                  poComments={draft?.kpiPoComments}
+                />
+              }
               ir={ir?.kpiComment}
             />
           </NumberedSection>
@@ -445,31 +473,44 @@ function ReportCard({
               itemTitle={`예결산의 적절성${draft?.budgetAdequacyGrade ? ` · ${draft.budgetAdequacyGrade}` : ''}`}
               dept={<EvalText value={draft?.budgetAdequacy} />}
               ir={ir?.budgetAdequacy}
-              irGrade={ir?.budgetAdequacyGrade}
             />
             <DualEvalBox
               itemTitle={`절차상 적절성${draft?.processAdequacyGrade ? ` · ${draft.processAdequacyGrade}` : ''}`}
               dept={<EvalText value={draft?.processAdequacy} />}
               ir={ir?.processAdequacy}
-              irGrade={ir?.processAdequacyGrade}
             />
             <DualEvalBox
               itemTitle={`성과지표 적절성${draft?.kpiAdequacyGrade ? ` · ${draft.kpiAdequacyGrade}` : ''}`}
               dept={<EvalText value={draft?.kpiAdequacy} />}
               ir={ir?.kpiAdequacy}
-              irGrade={ir?.kpiAdequacyGrade}
             />
           </NumberedSection>
 
           <NumberedSection n={5} title="만족도 조사 기반 자체평가">
             <DualEvalBox
               itemTitle="만족도 세부항목"
-              dept={<SurveyItemsTable items={draft?.surveyItems ?? []} />}
+              dept={
+                draft?.surveyItemsNa ? (
+                  <p className="text-sm text-muted-foreground">
+                    해당 사항이 없습니다.
+                  </p>
+                ) : (
+                  <SurveyItemsTable items={draft?.surveyItems ?? []} />
+                )
+              }
               ir={ir?.surveyItemsComment}
             />
             <DualEvalBox
-              itemTitle="만족도조사에 따른 환류계획"
-              dept={<SurveyPlansTable plans={draft?.surveyPlans ?? []} />}
+              itemTitle="대학만족도조사 외 조사 기반 자체평가"
+              dept={
+                draft?.surveyPlansNa ? (
+                  <p className="text-sm text-muted-foreground">
+                    해당 사항이 없습니다.
+                  </p>
+                ) : (
+                  <SurveyPlansTable plans={draft?.surveyPlans ?? []} />
+                )
+              }
               ir={ir?.surveyPlansComment}
             />
           </NumberedSection>

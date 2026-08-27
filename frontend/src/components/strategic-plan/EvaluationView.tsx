@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState, type ReactNode } from 'react';
+import { memo, useRef, useState, type ReactNode } from 'react';
 import { ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { Badge } from '@/components/ui/badge';
@@ -8,15 +8,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  activitiesForUnit,
   activityExecTotal,
   emptyActivity,
   emptySurveyItem,
   emptySurveyPlan,
-  evaluationFilledCount,
   evaluationStatus,
+  evaluationUnwrittenCount,
   taskBudgetUnits,
   unitSettlementTotal,
   yoyImprovementRate,
@@ -38,7 +38,7 @@ import type {
 import { cn } from '@/lib/utils';
 import { useStrategicPlanStore } from '@/store/useStrategicPlanStore';
 import { TaskHeading } from './TaskHeading';
-import { EmptyState, NativeSelect, SectionLabel } from './ui';
+import { EmptyState, EvalSectionTitle, NativeSelect, SectionLabel } from './ui';
 
 function GradeSelect({
   id,
@@ -93,22 +93,53 @@ function IrBlock({
   );
 }
 
+function NotApplicableToggle({
+  id,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  id: string;
+  checked: boolean;
+  disabled?: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+    >
+      해당 없음
+      <Switch
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onCheckedChange}
+      />
+    </label>
+  );
+}
+
 function EvalKpiRow({
   kpiCode,
   year,
   canEditResult,
   canEditPo,
   poEval,
+  poComment,
   deptGrades,
   onPoEval,
+  onPoComment,
 }: {
   kpiCode: string;
   year: number;
   canEditResult: boolean;
   canEditPo: boolean;
   poEval: string;
+  poComment: string;
   deptGrades: string[];
   onPoEval: (value: string) => void;
+  onPoComment: (value: string) => void;
 }) {
   const kpi = useStrategicPlanStore((s) =>
     s.tree?.kpis.find((k) => k.kpiCode === kpiCode),
@@ -121,7 +152,7 @@ function EvalKpiRow({
   const rate = achievementRate(actual, target);
 
   return (
-    <tr className="border-b last:border-b-0">
+    <tr className="border-b last:border-b-0 align-top">
       <td className="px-2 py-1.5">
         <SpCodeBadge level="kpi">{kpi.displayCode ?? kpi.kpiCode}</SpCodeBadge>
       </td>
@@ -156,14 +187,24 @@ function EvalKpiRow({
       >
         {rate === null ? '–' : `${fmt1(rate)}%`}
       </td>
-      <td className="px-2 py-1.5">
-        <GradeSelect
-          value={poEval}
-          options={deptGrades}
-          disabled={!canEditPo}
-          onChange={onPoEval}
-          className="w-28"
-        />
+      <td className="px-2 py-1.5 align-top">
+        <div className="grid gap-1.5">
+          <GradeSelect
+            value={poEval}
+            options={deptGrades}
+            disabled={!canEditPo}
+            onChange={onPoEval}
+            className="w-28"
+          />
+          <Textarea
+            rows={2}
+            value={poComment}
+            readOnly={!canEditPo}
+            placeholder="자체평가 내용을 서술합니다."
+            onChange={(e) => onPoComment(e.target.value)}
+            className="min-h-[64px]"
+          />
+        </div>
       </td>
     </tr>
   );
@@ -377,6 +418,9 @@ const EvaluationCard = memo(function EvaluationCard({
   const setEvaluationData = useStrategicPlanStore((s) => s.setEvaluationData);
   const setIrEvalField = useStrategicPlanStore((s) => s.setIrEvalField);
   const [open, setOpen] = useState(false);
+  const emptyActivitiesRef = useRef<Record<string, SpEvalActivity[]>>({});
+  const emptySurveyItemsRef = useRef<SpSurveyItem[] | null>(null);
+  const emptySurveyPlansRef = useRef<SpSurveyPlan[] | null>(null);
   const status = evaluationStatus(draft);
   const units = taskBudgetUnits(task);
   const deptLocked = irMode;
@@ -389,20 +433,18 @@ const EvaluationCard = memo(function EvaluationCard({
   const surveyItems =
     draft?.surveyItems && draft.surveyItems.length > 0
       ? draft.surveyItems
-      : [emptySurveyItem()];
+      : (emptySurveyItemsRef.current ??= [emptySurveyItem()]);
   const surveyPlans =
     draft?.surveyPlans && draft.surveyPlans.length > 0
       ? draft.surveyPlans
-      : [emptySurveyPlan()];
+      : (emptySurveyPlansRef.current ??= [emptySurveyPlan()]);
+  const surveyItemsNa = draft?.surveyItemsNa ?? false;
+  const surveyPlansNa = draft?.surveyPlansNa ?? false;
 
   const diagnosis: Array<{
     textKey: SpEvaluationTextField;
     gradeKey: SpEvaluationTextField;
     irText: 'budgetAdequacy' | 'processAdequacy' | 'kpiAdequacy';
-    irGrade:
-      | 'budgetAdequacyGrade'
-      | 'processAdequacyGrade'
-      | 'kpiAdequacyGrade';
             label: string;
             placeholder: string;
           }> = [
@@ -410,7 +452,6 @@ const EvaluationCard = memo(function EvaluationCard({
               textKey: 'budgetAdequacy',
               gradeKey: 'budgetAdequacyGrade',
               irText: 'budgetAdequacy',
-              irGrade: 'budgetAdequacyGrade',
               label: '예결산의 적절성',
               placeholder:
                 '예결산의 적절성에 대한 자체점검을 기술합니다. 예산 집행률에 따라 차년도 예산의 증감을 서술합니다.',
@@ -419,7 +460,6 @@ const EvaluationCard = memo(function EvaluationCard({
               textKey: 'processAdequacy',
               gradeKey: 'processAdequacyGrade',
               irText: 'processAdequacy',
-              irGrade: 'processAdequacyGrade',
               label: '절차상 적절성',
               placeholder:
                 '절차상 적절성(규정, 지침 구비 및 준수 여부 등)에 대한 자체점검을 기술합니다.',
@@ -428,7 +468,6 @@ const EvaluationCard = memo(function EvaluationCard({
               textKey: 'kpiAdequacy',
               gradeKey: 'kpiAdequacyGrade',
               irText: 'kpiAdequacy',
-              irGrade: 'kpiAdequacyGrade',
               label: '성과지표 적절성',
               placeholder:
                 '성과지표의 적절성(성과지표 산식, 구성, 산출시기 등)에 대한 자체점검을 기술합니다.',
@@ -451,17 +490,23 @@ const EvaluationCard = memo(function EvaluationCard({
         />
         <TaskHeading task={task} />
         <Badge variant="outline" className={cn('shrink-0', SP_STATUS_CLASS[status])}>
-          {evaluationFilledCount(draft)}항목 작성
+          {evaluationUnwrittenCount(draft)}항목 미작성
         </Badge>
       </button>
 
       {open && (
         <CardContent className="space-y-6 border-t pt-4">
           <div>
-            <SectionLabel>① TASK별 사업/프로그램 자체평가</SectionLabel>
+            <EvalSectionTitle>① TASK별 사업/프로그램 자체평가</EvalSectionTitle>
             <div className="space-y-5">
               {units.map((unit) => {
-                const rows = activitiesForUnit(draft, unit.code);
+                const stored = draft?.taskActivities?.[unit.code];
+                const rows =
+                  stored && stored.length > 0
+                    ? stored
+                    : (emptyActivitiesRef.current[unit.code] ??= [
+                        emptyActivity(),
+                      ]);
                 return (
                   <div key={unit.code} className="space-y-2">
                     <ActivityTable
@@ -508,9 +553,9 @@ const EvaluationCard = memo(function EvaluationCard({
           </div>
 
           <div>
-            <SectionLabel>
+            <EvalSectionTitle>
               ② 성과지표 달성값 — {year}학년도 목표 대비
-            </SectionLabel>
+            </EvalSectionTitle>
             {task.kpiCodes.length === 0 ? (
               <p className="text-sm text-muted-foreground">연계 KPI 없음</p>
             ) : (
@@ -527,9 +572,7 @@ const EvaluationCard = memo(function EvaluationCard({
                       </th>
                       <th className="px-2 py-1.5 text-left font-bold">실적값</th>
                       <th className="px-2 py-1.5 text-left font-bold">달성률</th>
-                      <th className="px-2 py-1.5 text-left font-bold">
-                        PO 자체평가
-                      </th>
+                      <th className="px-2 py-1.5 text-left font-bold">자체평가</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -541,11 +584,20 @@ const EvaluationCard = memo(function EvaluationCard({
                         canEditResult={canEditResults && !irMode}
                         canEditPo={!irMode}
                         poEval={draft?.kpiPoEvals?.[code] ?? ''}
+                        poComment={draft?.kpiPoComments?.[code] ?? ''}
                         deptGrades={deptGrades}
                         onPoEval={(value) =>
                           setEvaluationData(task.taskCode, {
                             kpiPoEvals: {
                               ...(draft?.kpiPoEvals ?? {}),
+                              [code]: value,
+                            },
+                          })
+                        }
+                        onPoComment={(value) =>
+                          setEvaluationData(task.taskCode, {
+                            kpiPoComments: {
+                              ...(draft?.kpiPoComments ?? {}),
                               [code]: value,
                             },
                           })
@@ -577,7 +629,7 @@ const EvaluationCard = memo(function EvaluationCard({
           </div>
 
           <div>
-            <SectionLabel>③ 주요 성과 및 우수사례</SectionLabel>
+            <EvalSectionTitle>③ 주요 성과 및 우수사례</EvalSectionTitle>
             <div className="grid gap-3">
               <div className="grid gap-1.5">
                 <Label htmlFor={`ev-${task.taskCode}-ach`}>
@@ -629,7 +681,7 @@ const EvaluationCard = memo(function EvaluationCard({
           </div>
 
           <div>
-            <SectionLabel>④ 자체점검 및 진단</SectionLabel>
+            <EvalSectionTitle>④ 자체점검 및 진단</EvalSectionTitle>
             <div className="grid gap-4">
               {diagnosis.map((item) => (
                 <div key={item.textKey} className="grid gap-1.5">
@@ -653,15 +705,6 @@ const EvaluationCard = memo(function EvaluationCard({
                     onChange={(e) => setText(item.textKey, e.target.value)}
                   />
                   <IrBlock irMode={irMode} label={`${item.label} IR 평가`}>
-                    <div className="mb-2">
-                      <GradeSelect
-                        value={ir[item.irGrade] ?? ''}
-                        options={deptGrades}
-                        onChange={(value) =>
-                          setIrEvalField(task.taskCode, item.irGrade, value)
-                        }
-                      />
-                    </div>
                     <Textarea
                       rows={3}
                       value={ir[item.irText] ?? ''}
@@ -677,275 +720,330 @@ const EvaluationCard = memo(function EvaluationCard({
           </div>
 
           <div>
-            <SectionLabel>⑤ 만족도 조사 기반 자체평가</SectionLabel>
+            <EvalSectionTitle>⑤ 만족도 조사 기반 자체평가</EvalSectionTitle>
             <div className="grid gap-3">
               <div>
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <SectionLabel className="mb-0">만족도 세부항목</SectionLabel>
-                  {!deptLocked && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() =>
+                  <div className="flex items-center gap-2">
+                    <NotApplicableToggle
+                      id={`ev-${task.taskCode}-survey-items-na`}
+                      checked={surveyItemsNa}
+                      disabled={deptLocked}
+                      onCheckedChange={(checked) =>
                         setEvaluationData(task.taskCode, {
-                          surveyItems: [...surveyItems, emptySurveyItem()],
+                          surveyItemsNa: checked,
                         })
                       }
-                    >
-                      <Plus className="h-4 w-4" />
-                      세부항목 추가
-                    </Button>
-                  )}
-                </div>
-                <div className="rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead className="border-b bg-muted/50">
-                      <tr>
-                        <th className="px-2 py-1.5 text-left font-bold">
-                          만족도세부항목명
-                        </th>
-                        <th className="px-2 py-1.5 text-left font-bold">
-                          전년도 달성값
-                        </th>
-                        <th className="px-2 py-1.5 text-left font-bold">
-                          올해 달성값
-                        </th>
-                        <th className="px-2 py-1.5 text-left font-bold">
-                          전년대비 향상률
-                        </th>
-                        <th className="px-2 py-1.5 text-left font-bold">자체평가</th>
-                        {!deptLocked && <th className="w-10 px-1 py-1.5" />}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {surveyItems.map((row, index) => {
-                        const rate = yoyImprovementRate(row.prevValue, row.thisValue);
-                        const update = (patch: Partial<SpSurveyItem>) => {
+                    />
+                    {!deptLocked && !surveyItemsNa && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() =>
                           setEvaluationData(task.taskCode, {
-                            surveyItems: surveyItems.map((item, i) =>
-                              i === index ? { ...item, ...patch } : item,
-                            ),
-                          });
-                        };
-                        return (
-                          <tr key={row.id} className="border-b last:border-b-0">
-                            <td className="px-2 py-1.5">
-                              <Input
-                                value={row.name}
-                                readOnly={deptLocked}
-                                onChange={(e) => update({ name: e.target.value })}
-                                className="h-8"
-                              />
-                            </td>
-                            <td className="px-2 py-1.5 text-right">
-                              <div className="flex justify-end">
-                                <Input
-                                  value={row.prevValue}
-                                  readOnly={deptLocked}
-                                  inputMode="decimal"
-                                  onChange={(e) =>
-                                    update({ prevValue: e.target.value })
-                                  }
-                                  className="h-8 w-24 text-right tabular-nums"
-                                />
-                              </div>
-                            </td>
-                            <td className="px-2 py-1.5 text-right">
-                              <div className="flex justify-end">
-                                <Input
-                                  value={row.thisValue}
-                                  readOnly={deptLocked}
-                                  inputMode="decimal"
-                                  onChange={(e) =>
-                                    update({ thisValue: e.target.value })
-                                  }
-                                  className="h-8 w-24 text-right tabular-nums"
-                                />
-                              </div>
-                            </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums">
-                              {rate === null ? '–' : `${fmt1(rate)}%`}
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <GradeSelect
-                                value={row.selfEval}
-                                options={deptGrades}
-                                disabled={deptLocked}
-                                onChange={(value) => update({ selfEval: value })}
-                                className="w-24"
-                              />
-                            </td>
-                            {!deptLocked && (
-                              <td className="px-1 py-1.5">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  disabled={surveyItems.length <= 1}
-                                  onClick={() =>
-                                    setEvaluationData(task.taskCode, {
-                                      surveyItems: surveyItems.filter(
-                                        (_, i) => i !== index,
-                                      ),
-                                    })
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            surveyItems: [...surveyItems, emptySurveyItem()],
+                          })
+                        }
+                      >
+                        <Plus className="h-4 w-4" />
+                        세부항목 추가
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <IrBlock irMode={irMode} label="만족도 세부항목 IR 평가">
-                  <Textarea
-                    rows={3}
-                    value={ir.surveyItemsComment ?? ''}
-                    placeholder="첨삭 또는 추가 의견"
-                    onChange={(e) =>
-                      setIrEvalField(
-                        task.taskCode,
-                        'surveyItemsComment',
-                        e.target.value,
-                      )
-                    }
-                  />
-                </IrBlock>
+                {surveyItemsNa ? (
+                  <p className="text-sm text-muted-foreground">
+                    해당 사항이 없습니다.
+                  </p>
+                ) : (
+                  <>
+                    <div className="rounded-md border">
+                      <table className="w-full text-sm">
+                        <thead className="border-b bg-muted/50">
+                          <tr>
+                            <th className="px-2 py-1.5 text-left font-bold">
+                              만족도세부항목명
+                            </th>
+                            <th className="px-2 py-1.5 text-right font-bold whitespace-nowrap">
+                              전년도 달성값
+                            </th>
+                            <th className="px-2 py-1.5 text-right font-bold whitespace-nowrap">
+                              올해 달성값
+                            </th>
+                            <th className="px-2 py-1.5 text-right font-bold whitespace-nowrap">
+                              전년대비 향상률
+                            </th>
+                            <th className="px-2 py-1.5 text-left font-bold">자체평가</th>
+                            {!deptLocked && <th className="w-10 px-1 py-1.5" />}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {surveyItems.map((row, index) => {
+                            const rate = yoyImprovementRate(row.prevValue, row.thisValue);
+                            const update = (patch: Partial<SpSurveyItem>) => {
+                              setEvaluationData(task.taskCode, {
+                                surveyItems: surveyItems.map((item, i) =>
+                                  i === index ? { ...item, ...patch } : item,
+                                ),
+                              });
+                            };
+                            return (
+                              <tr key={row.id} className="border-b last:border-b-0">
+                                <td className="px-2 py-1.5">
+                                  <Input
+                                    value={row.name}
+                                    readOnly={deptLocked}
+                                    placeholder="전공교육 재학생 만족도(점)"
+                                    onChange={(e) => update({ name: e.target.value })}
+                                    className="h-8"
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5 text-right">
+                                  <div className="flex justify-end">
+                                    <Input
+                                      value={row.prevValue}
+                                      readOnly={deptLocked}
+                                      inputMode="decimal"
+                                      onChange={(e) =>
+                                        update({ prevValue: e.target.value })
+                                      }
+                                      className="h-8 w-24 text-right tabular-nums"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-2 py-1.5 text-right">
+                                  <div className="flex justify-end">
+                                    <Input
+                                      value={row.thisValue}
+                                      readOnly={deptLocked}
+                                      inputMode="decimal"
+                                      onChange={(e) =>
+                                        update({ thisValue: e.target.value })
+                                      }
+                                      className="h-8 w-24 text-right tabular-nums"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-2 py-1.5 text-right tabular-nums">
+                                  {rate === null ? '–' : `${fmt1(rate)}%`}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <GradeSelect
+                                    value={row.selfEval}
+                                    options={deptGrades}
+                                    disabled={deptLocked}
+                                    onChange={(value) => update({ selfEval: value })}
+                                    className="w-24"
+                                  />
+                                </td>
+                                {!deptLocked && (
+                                  <td className="px-1 py-1.5">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      disabled={surveyItems.length <= 1}
+                                      onClick={() =>
+                                        setEvaluationData(task.taskCode, {
+                                          surveyItems: surveyItems.filter(
+                                            (_, i) => i !== index,
+                                          ),
+                                        })
+                                      }
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <IrBlock irMode={irMode} label="만족도 세부항목 IR 평가">
+                      <Textarea
+                        rows={3}
+                        value={ir.surveyItemsComment ?? ''}
+                        placeholder="첨삭 또는 추가 의견"
+                        onChange={(e) =>
+                          setIrEvalField(
+                            task.taskCode,
+                            'surveyItemsComment',
+                            e.target.value,
+                          )
+                        }
+                      />
+                    </IrBlock>
+                  </>
+                )}
               </div>
 
               <div>
                 <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <SectionLabel className="mb-0">
-                    만족도조사에 따른 환류계획
+                    대학만족도조사 외 조사 기반 자체평가
                   </SectionLabel>
-                  {!deptLocked && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() =>
+                  <div className="flex items-center gap-2">
+                    <NotApplicableToggle
+                      id={`ev-${task.taskCode}-survey-plans-na`}
+                      checked={surveyPlansNa}
+                      disabled={deptLocked}
+                      onCheckedChange={(checked) =>
                         setEvaluationData(task.taskCode, {
-                          surveyPlans: [...surveyPlans, emptySurveyPlan()],
+                          surveyPlansNa: checked,
                         })
                       }
-                    >
-                      <Plus className="h-4 w-4" />
-                      환류계획 행 추가
-                    </Button>
-                  )}
-                </div>
-                <div className="rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead className="border-b bg-muted/50">
-                      <tr>
-                        <th className="px-2 py-1.5 text-left font-bold">구분</th>
-                        <th className="px-2 py-1.5 text-left font-bold">
-                          조사 내용 및 요구사항
-                        </th>
-                        <th className="px-2 py-1.5 text-left font-bold">환류계획</th>
-                        {!deptLocked && <th className="w-10 px-1 py-1.5" />}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {surveyPlans.map((row, index) => {
-                        const update = (patch: Partial<SpSurveyPlan>) => {
+                    />
+                    {!deptLocked && !surveyPlansNa && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() =>
                           setEvaluationData(task.taskCode, {
-                            surveyPlans: surveyPlans.map((item, i) =>
-                              i === index ? { ...item, ...patch } : item,
-                            ),
-                          });
-                        };
-                        return (
-                          <tr key={row.id} className="border-b last:border-b-0 align-top">
-                            <td className="px-2 py-1.5">
-                              <Input
-                                value={row.category}
-                                readOnly={deptLocked}
-                                onChange={(e) =>
-                                  update({ category: e.target.value })
-                                }
-                                className="h-8"
-                              />
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <Textarea
-                                rows={2}
-                                value={row.request}
-                                readOnly={deptLocked}
-                                onChange={(e) =>
-                                  update({ request: e.target.value })
-                                }
-                                className="min-h-[64px]"
-                              />
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <GradeSelect
-                                value={row.planGrade}
-                                options={surveyPlanGrades}
-                                disabled={deptLocked}
-                                onChange={(value) =>
-                                  update({ planGrade: value })
-                                }
-                                className="mb-1.5 w-32"
-                              />
-                              <Textarea
-                                rows={2}
-                                value={row.planText}
-                                readOnly={deptLocked}
-                                placeholder="환류계획을 서술합니다."
-                                onChange={(e) =>
-                                  update({ planText: e.target.value })
-                                }
-                                className="min-h-[64px]"
-                              />
-                            </td>
-                            {!deptLocked && (
-                              <td className="px-1 py-1.5">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  disabled={surveyPlans.length <= 1}
-                                  onClick={() =>
-                                    setEvaluationData(task.taskCode, {
-                                      surveyPlans: surveyPlans.filter(
-                                        (_, i) => i !== index,
-                                      ),
-                                    })
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            surveyPlans: [...surveyPlans, emptySurveyPlan()],
+                          })
+                        }
+                      >
+                        <Plus className="h-4 w-4" />
+                        환류계획 행 추가
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <IrBlock irMode={irMode} label="환류계획 IR 평가">
-                  <Textarea
-                    rows={3}
-                    value={ir.surveyPlansComment ?? ''}
-                    placeholder="첨삭 또는 추가 의견"
-                    onChange={(e) =>
-                      setIrEvalField(
-                        task.taskCode,
-                        'surveyPlansComment',
-                        e.target.value,
-                      )
-                    }
-                  />
-                </IrBlock>
+                {surveyPlansNa ? (
+                  <p className="text-sm text-muted-foreground">
+                    해당 사항이 없습니다.
+                  </p>
+                ) : (
+                  <>
+                    <div className="rounded-md border">
+                      <table className="w-full text-sm">
+                        <thead className="border-b bg-muted/50">
+                          <tr>
+                            <th className="px-2 py-1.5 text-left font-bold">구분</th>
+                            <th className="px-2 py-1.5 text-left font-bold">영역</th>
+                            <th className="px-2 py-1.5 text-left font-bold">
+                              조사 및 요구사항
+                            </th>
+                            <th className="px-2 py-1.5 text-left font-bold">환류계획</th>
+                            {!deptLocked && <th className="w-10 px-1 py-1.5" />}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {surveyPlans.map((row, index) => {
+                            const update = (patch: Partial<SpSurveyPlan>) => {
+                              setEvaluationData(task.taskCode, {
+                                surveyPlans: surveyPlans.map((item, i) =>
+                                  i === index ? { ...item, ...patch } : item,
+                                ),
+                              });
+                            };
+                            return (
+                              <tr key={row.id} className="border-b last:border-b-0 align-top">
+                                <td className="px-2 py-1.5">
+                                  <Input
+                                    value={row.category}
+                                    readOnly={deptLocked}
+                                    placeholder="수요조사, FGI조사, 자체만족도조사 등"
+                                    onChange={(e) =>
+                                      update({ category: e.target.value })
+                                    }
+                                    className="h-8"
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <Input
+                                    value={row.area ?? ''}
+                                    readOnly={deptLocked}
+                                    placeholder="조사 대상(전공, 교양, 비교과프로그램, 장학금 등)"
+                                    onChange={(e) =>
+                                      update({ area: e.target.value })
+                                    }
+                                    className="h-8"
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <Textarea
+                                    rows={2}
+                                    value={row.request}
+                                    readOnly={deptLocked}
+                                    placeholder="조사 내용 서술"
+                                    onChange={(e) =>
+                                      update({ request: e.target.value })
+                                    }
+                                    className="min-h-[64px]"
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <GradeSelect
+                                    value={row.planGrade}
+                                    options={surveyPlanGrades}
+                                    disabled={deptLocked}
+                                    onChange={(value) =>
+                                      update({ planGrade: value })
+                                    }
+                                    className="mb-1.5 w-32"
+                                  />
+                                  <Textarea
+                                    rows={2}
+                                    value={row.planText}
+                                    readOnly={deptLocked}
+                                    placeholder="부서의 대응 및 환류계획 서술"
+                                    onChange={(e) =>
+                                      update({ planText: e.target.value })
+                                    }
+                                    className="min-h-[64px]"
+                                  />
+                                </td>
+                                {!deptLocked && (
+                                  <td className="px-1 py-1.5">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      disabled={surveyPlans.length <= 1}
+                                      onClick={() =>
+                                        setEvaluationData(task.taskCode, {
+                                          surveyPlans: surveyPlans.filter(
+                                            (_, i) => i !== index,
+                                          ),
+                                        })
+                                      }
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <IrBlock irMode={irMode} label="환류계획 IR 평가">
+                      <Textarea
+                        rows={3}
+                        value={ir.surveyPlansComment ?? ''}
+                        placeholder="첨삭 또는 추가 의견"
+                        onChange={(e) =>
+                          setIrEvalField(
+                            task.taskCode,
+                            'surveyPlansComment',
+                            e.target.value,
+                          )
+                        }
+                      />
+                    </IrBlock>
+                  </>
+                )}
               </div>
             </div>
           </div>

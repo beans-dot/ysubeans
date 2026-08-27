@@ -72,3 +72,16 @@ export function SectionLabel({
     </h4>
   );
 }
+
+/** 자체평가 ①~⑤ 소제목 */
+export function EvalSectionTitle({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <h4 className={cn('sp-eval-section-title mb-1.5', className)}>{children}</h4>
+  );
+}

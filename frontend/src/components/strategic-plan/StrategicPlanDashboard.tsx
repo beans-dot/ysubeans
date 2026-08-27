@@ -31,7 +31,6 @@ export function StrategicPlanDashboard() {
   const entryLoading = useStrategicPlanStore((s) => s.entryLoading);
   const error = useStrategicPlanStore((s) => s.error);
   const saveError = useStrategicPlanStore((s) => s.saveError);
-  const pendingSaves = useStrategicPlanStore((s) => s.pendingSaves);
   const view = useStrategicPlanStore((s) => s.view);
   const goalId = useStrategicPlanStore((s) => s.goalId);
   const dept = useStrategicPlanStore((s) => s.dept);
@@ -118,7 +117,7 @@ export function StrategicPlanDashboard() {
           )}
         </div>
 
-        {(saveError || pendingSaves > 0 || entryLoading) && (
+        {(saveError || entryLoading) && (
           <div
             className={
               saveError
@@ -129,7 +128,7 @@ export function StrategicPlanDashboard() {
             {saveError ?? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {entryLoading ? '입력값 불러오는 중…' : '저장 중…'}
+                입력값 불러오는 중…
               </>
             )}
           </div>
