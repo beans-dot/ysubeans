@@ -51,6 +51,11 @@ export interface MetricNode {
   displayOrder: number;
   parentMetricId?: number | null;
   isHidden?: boolean;
+  /** `{#metricId}` 사칙연산식. computeEnabled 일 때 조회에 사용 */
+  computeFormula?: string | null;
+  computeEnabled?: boolean;
+  /** 이 지표 행 자체에 업로드된 원본 값이 있는지 */
+  hasRawData?: boolean;
   children?: MetricNode[];
 }
 

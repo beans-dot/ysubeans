@@ -10,6 +10,7 @@ import {
 } from '@hello-pangea/dnd';
 import {
   ArrowRight,
+  Calculator,
   Check,
   GripVertical,
   Pencil,
@@ -21,8 +22,12 @@ import {
 } from 'lucide-react';
 import { api, type CategoryTreeNode, type MetricNode } from '@/lib/api';
 import { UNCATEGORIZED_CATEGORY_NAME } from '@/lib/metricConstants';
-import { monitoringComputeRole } from '@/lib/monitoring/catalog';
+import {
+  isLockedAutoComputeMetric,
+  monitoringComputeRole,
+} from '@/lib/monitoring/catalog';
 import { cn } from '@/lib/utils';
+import { FormulaEditorDialog } from '@/components/admin/FormulaEditorDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -60,15 +65,35 @@ function metricLabel(m: MetricNode): string {
   return m.isHidden ? `[숨김] ${name}` : name;
 }
 
-function ComputeRoleBadge({ metricCode }: { metricCode?: string | null }) {
-  const role = monitoringComputeRole(metricCode);
+function ComputeRoleBadge({
+  metric,
+  parentComputed,
+}: {
+  metric: MetricNode;
+  parentComputed?: boolean;
+}) {
+  const catalog = monitoringComputeRole(metric.metricCode);
+  const role =
+    catalog ??
+    (metric.computeEnabled
+      ? 'computed'
+      : parentComputed
+        ? 'component'
+        : null);
   if (!role) return null;
   if (role === 'computed') {
+    const formulaHint = metric.computeFormula
+      ? ' 계산식이 설정되어 있습니다.'
+      : '';
     return (
       <Badge
         variant="outline"
         className="shrink-0 border-violet-300 bg-violet-50 text-violet-800"
-        title="하위 구성항목을 합산해 조회 화면에 표시합니다. 이 행 자체는 업로드하지 않습니다."
+        title={
+          catalog
+            ? '하위 구성항목을 합산해 조회 화면에 표시합니다. 이 행 자체는 업로드하지 않습니다.'
+            : `하위지표 계산식으로 조회 화면에 표시합니다.${formulaHint} 하위 항목만 엑셀로 올리면 됩니다.`
+        }
       >
         자동계산
       </Badge>
@@ -134,6 +159,47 @@ function renameMetricInTree(
       children: renameMetricInTree(m.children ?? [], metricId, metricName),
     };
   });
+}
+
+function patchMetricInTree(
+  metrics: MetricNode[],
+  metricId: number,
+  patch: Partial<MetricNode>,
+): MetricNode[] {
+  return metrics.map((m) => {
+    if (m.metricId === metricId) return { ...m, ...patch };
+    return {
+      ...m,
+      children: patchMetricInTree(m.children ?? [], metricId, patch),
+    };
+  });
+}
+
+function findMetricInList(
+  metrics: MetricNode[],
+  metricId: number,
+): MetricNode | undefined {
+  for (const m of metrics) {
+    if (m.metricId === metricId) return m;
+    const hit = findMetricInList(m.children ?? [], metricId);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+function findMetricInTree(
+  tree: CategoryTreeNode[],
+  metricId: number,
+): MetricNode | undefined {
+  for (const cat of tree) {
+    const hit = findMetricInList(cat.metrics, metricId);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+function canEditFormula(metric: MetricNode): boolean {
+  return !isLockedAutoComputeMetric(metric.metricCode);
 }
 
 /** 들여쓰기 폭: 상위 지표 아래 하위·하위하위 지표 */
@@ -335,6 +401,7 @@ function TreeBuilderPane({
   const [editingMetricId, setEditingMetricId] = useState<number | null>(null);
   const [editingMetricName, setEditingMetricName] = useState('');
   const [renamingMetric, setRenamingMetric] = useState(false);
+  const [formulaMetric, setFormulaMetric] = useState<MetricNode | null>(null);
 
   /** 공시(ALIMI)는 알리미 배치가 지표명으로 값을 물므로 수정 불가. 자체·모니터링은 metric_id가 유지된다. */
   const metricRenameEnabled = sourceType !== 'ALIMI';
@@ -346,6 +413,9 @@ function TreeBuilderPane({
   ) => {
     const metricName = name.trim();
     if (!metricName) return;
+    const parentBefore =
+      parentMetricId != null ? findMetricInTree(tree, parentMetricId) : undefined;
+    const wasFirstChild = (parentBefore?.children?.length ?? 0) === 0;
     await api.post('/metrics', {
       categoryId,
       sourceType,
@@ -356,19 +426,40 @@ function TreeBuilderPane({
     setAddingChildOf(null);
     setChildMetricName('');
     window.dispatchEvent(new Event('ir-metrics-changed'));
-    load();
+    const next = await load();
+    if (
+      parentMetricId != null &&
+      sourceType === 'MONITORING' &&
+      parentBefore &&
+      canEditFormula(parentBefore)
+    ) {
+      const parent = findMetricInTree(next, parentMetricId);
+      if (parent) {
+        const shouldOpen =
+          wasFirstChild ||
+          !!parent.hasRawData ||
+          !!parent.computeEnabled ||
+          (parent.children?.length ?? 0) > 0;
+        if (shouldOpen) setFormulaMetric(parent);
+      }
+    }
   };
 
-  const load = () => {
-    api
+  const load = (): Promise<CategoryTreeNode[]> => {
+    return api
       .get<CategoryTreeNode[]>('/metrics/tree', {
         params: { sourceType, includeHidden: true },
       })
       .then(({ data }) => {
-        setTree(sortTree(data));
+        const sorted = sortTree(data);
+        setTree(sorted);
         setSelectedIds(new Set());
+        return sorted;
       })
-      .catch(() => setTree([]));
+      .catch(() => {
+        setTree([]);
+        return [];
+      });
   };
 
   useEffect(() => {
@@ -715,6 +806,7 @@ function TreeBuilderPane({
     cat: CategoryTreeNode,
     depth: number,
     dragHandleProps?: DraggableProvidedDragHandleProps | null,
+    parentComputed = false,
   ) => {
     const isSelected = selectedIds.has(m.metricId);
     const badge = sourceBadge(m.sourceType);
@@ -813,21 +905,41 @@ function TreeBuilderPane({
           {!editing && (
             <>
               {sourceType === 'MONITORING' && !settingsMode && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2 text-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAddingChildOf(m.metricId);
-                    setChildMetricName('');
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  <Plus className="mr-1 h-3 w-3" />
-                  하위
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAddingChildOf(m.metricId);
+                      setChildMetricName('');
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <Plus className="mr-1 h-3 w-3" />
+                    하위
+                  </Button>
+                  {canEditFormula(m) &&
+                    ((m.children?.length ?? 0) > 0 || m.computeEnabled) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFormulaMetric(m);
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        title="하위지표 자동계산식"
+                      >
+                        <Calculator className="mr-1 h-3 w-3" />
+                        계산식
+                      </Button>
+                    )}
+                </>
               )}
               {metricRenameEnabled && (
                 <Button
@@ -848,7 +960,10 @@ function TreeBuilderPane({
                 </Button>
               )}
               {sourceType === 'MONITORING' && (
-                <ComputeRoleBadge metricCode={m.metricCode} />
+                <ComputeRoleBadge
+                  metric={m}
+                  parentComputed={parentComputed}
+                />
               )}
               <Badge variant={badge.variant}>{badge.label}</Badge>
               {settingsMode && (
@@ -904,7 +1019,15 @@ function TreeBuilderPane({
           </div>
         )}
         {(m.children ?? []).map((child) =>
-          renderMetricRow(child, cat, depth + 1),
+          renderMetricRow(
+            child,
+            cat,
+            depth + 1,
+            undefined,
+            parentComputed ||
+              !!m.computeEnabled ||
+              monitoringComputeRole(m.metricCode) === 'computed',
+          ),
         )}
       </div>
     );
@@ -1157,7 +1280,7 @@ function TreeBuilderPane({
             ? '대학정보공시(알리미) 지표만 표시됩니다. dashboard 조회 대상이며, 분류 왼쪽 손잡이로 순서를 바꾸고 지표는 드래그하거나 체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요.'
             : sourceType === 'INTERNAL'
               ? `엑셀로 등록된 신규 자체 지표는 최상단 「${UNCATEGORIZED_CATEGORY_NAME}」에 모입니다. competitiveness 조회 대상이며, 분류 왼쪽 손잡이로 순서를 바꾸고 지표는 드래그하거나 체크박스로 일괄 이동한 뒤 「작업 저장」을 눌러 주세요. 자체 지표명은 연필 버튼으로 수정할 수 있고, metric_id는 그대로 유지되므로 기존 데이터·업로드 양식·조회 화면에 바로 반영됩니다.`
-              : '대학주요모니터링 전용 지표입니다. 「자동계산」은 하위 「구성항목」을 합산해 조회 화면에 나오는 지표이고, 「구성항목」만 엑셀로 올리면 됩니다. 이 표기는 지표 DB 빌더에만 보이며 monitoring 조회 화면에는 나오지 않습니다. 지표명은 연필 버튼으로 수정할 수 있고 metric_id는 그대로입니다. 이름을 바꾼 뒤에는 양식·코드북을 다시 받으세요.'}
+              : '대학주요모니터링 전용 지표입니다. 하위지표를 두면 「계산식」으로 사칙연산 자동계산을 설정할 수 있습니다. 기존에 값이 있는 지표도 자동계산으로 전환할 수 있고, 하위 값이 없는 연도는 기존 값을 유지합니다. 재학생 수·회계는 조회 화면 계산이 고정되어 있습니다. 「구성항목」만 엑셀로 올리면 됩니다. 지표명은 연필 버튼으로 수정할 수 있고 metric_id는 그대로입니다. 이름을 바꾼 뒤에는 양식·코드북을 다시 받으세요.'}
         </p>
 
         <div className="flex gap-2">
@@ -1252,6 +1375,25 @@ function TreeBuilderPane({
           </div>
         </DragDropContext>
       </CardContent>
+      <FormulaEditorDialog
+        metric={formulaMetric}
+        open={formulaMetric != null}
+        onOpenChange={(next) => {
+          if (!next) setFormulaMetric(null);
+        }}
+        onSaved={(updated) => {
+          setTree((prev) =>
+            prev.map((c) => ({
+              ...c,
+              metrics: patchMetricInTree(c.metrics, updated.metricId, {
+                computeFormula: updated.computeFormula,
+                computeEnabled: updated.computeEnabled,
+              }),
+            })),
+          );
+          window.dispatchEvent(new Event('ir-metrics-changed'));
+        }}
+      />
     </Card>
   );
 }

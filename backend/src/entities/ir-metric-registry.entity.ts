@@ -47,6 +47,17 @@ export class IrMetricRegistry {
   @Column({ name: 'aggregation_type', type: 'varchar', length: 30, default: 'SUM' })
   aggregationType: string;
 
+  /**
+   * 하위지표 자동계산식. `{#metricId}` 와 사칙연산만 허용.
+   * computeEnabled 가 true 일 때 조회 화면에서 이 식으로 값을 만든다.
+   */
+  @Column({ name: 'compute_formula', type: 'text', nullable: true })
+  computeFormula: string | null;
+
+  /** true면 원본 값 대신 하위지표 계산식을 조회에 사용 (하위 값이 없는 연도는 원본 폴백) */
+  @Column({ name: 'compute_enabled', type: 'boolean', default: false })
+  computeEnabled: boolean;
+
   @Column({ name: 'display_order', type: 'int', default: 0 })
   displayOrder: number;
 

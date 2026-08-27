@@ -28,11 +28,7 @@ import {
   stackShade,
 } from '@/lib/monitoring/percentiles';
 import type { KpiViewModel } from '@/lib/monitoring/fetchMonitoringData';
-import type {
-  HighlightBand,
-  OrgStructure,
-  StudentCountComponentKey,
-} from '@/lib/monitoring/types';
+import type { HighlightBand, OrgStructure } from '@/lib/monitoring/types';
 import { cn } from '@/lib/utils';
 
 const SORT_KEYS: Array<{ key: CompareSortKey; label: string }> = [
@@ -89,12 +85,12 @@ function StudentStackTooltip({
   }>;
   metricLabel: string;
   unit: string | null;
-  labels: Partial<Record<StudentCountComponentKey, string>>;
+  labels: Record<string, string>;
 }) {
   if (!active || !payload?.length) return null;
   const item = payload[0];
   const row = item.payload;
-  const key = String(item.dataKey ?? '') as StudentCountComponentKey;
+  const key = String(item.dataKey ?? '');
   const part = typeof item.value === 'number' ? item.value : null;
   const total = row?.barValue ?? null;
   const varLabel = labels[key] ?? key;
@@ -125,9 +121,9 @@ export function HierarchyCompareChart({
   const [sortKey, setSortKey] = useState<CompareSortKey>('order');
   const [sortDir, setSortDir] = useState<CompareSortDir>('asc');
 
-  const stackKeys = view.studentBreakdown?.keys ?? [];
-  const stackLabels: Partial<Record<StudentCountComponentKey, string>> =
-    view.studentBreakdown?.labels ?? {};
+  const stack = view.stackBreakdown ?? view.studentBreakdown;
+  const stackKeys = stack?.keys ?? [];
+  const stackLabels: Record<string, string> = stack?.labels ?? {};
   const stacked = stackKeys.length >= 2;
 
   const rows = useMemo(() => {
@@ -168,9 +164,9 @@ export function HierarchyCompareChart({
 
   if (!view.hasHierarchy) {
     return (
-      <p className="text-sm text-muted-foreground">
-        이 지표는 계열·학과 단위 데이터가 없어 하위 위계 비교를 할 수 없습니다.
-      </p>
+      <div className="rounded-md border border-dashed bg-background px-4 py-10 text-center text-sm text-muted-foreground">
+        하위위계가 없습니다.
+      </div>
     );
   }
 
@@ -181,19 +177,19 @@ export function HierarchyCompareChart({
           <span className="text-sm font-bold">{view.selectedYear}년</span>
           <div className="flex items-center gap-2">
             <Switch
-              id="compare-series"
+              id={`${view.id}-compare-series`}
               checked={showSeries}
               onCheckedChange={setShowSeries}
             />
-            <Label htmlFor="compare-series">계열</Label>
+            <Label htmlFor={`${view.id}-compare-series`}>계열</Label>
           </div>
           <div className="flex items-center gap-2">
             <Switch
-              id="compare-depts"
+              id={`${view.id}-compare-depts`}
               checked={showDepts}
               onCheckedChange={setShowDepts}
             />
-            <Label htmlFor="compare-depts">학과</Label>
+            <Label htmlFor={`${view.id}-compare-depts`}>학과</Label>
           </div>
           <div className="flex max-w-full flex-nowrap items-center gap-3 overflow-x-auto whitespace-nowrap pb-1 text-xs text-muted-foreground">
             <span className="inline-flex shrink-0 items-center gap-1">
@@ -240,7 +236,7 @@ export function HierarchyCompareChart({
                         ),
                       }}
                     />
-                    {stackLabels[key]}
+                    {stackLabels[key] ?? key}
                   </span>
                 ))
               : null}
@@ -328,7 +324,7 @@ export function HierarchyCompareChart({
                     <Bar
                       key={key}
                       dataKey={key}
-                      name={stackLabels[key]}
+                      name={stackLabels[key] ?? key}
                       stackId="student"
                       maxBarSize={18}
                       isAnimationActive={false}

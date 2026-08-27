@@ -11,6 +11,11 @@ import { hasHierarchyData, readYearValue } from './aggregate';
 import { MONITORING_KPI_MAP, STUDENT_COUNT_COMPONENT_SHORT_LABELS } from './catalog';
 import { composeAccountingHierarchy } from './composeAccounting';
 import {
+  composeFormulaHierarchy,
+  composeAdditiveHierarchy,
+  formulaChildHierarchies,
+} from './composeFormula';
+import {
   composeStudentCountHierarchy,
   emptyYearMap,
   selectedComponentKeys,
@@ -21,6 +26,7 @@ import {
   resolveMonitoringMetrics,
 } from './resolveMetrics';
 import type {
+  FormulaEvalNode,
   HierarchyValues,
   MonitoringCategoryDef,
   MonitoringKpiDef,
@@ -29,10 +35,13 @@ import type {
   StudentCountBreakdown,
   StudentCountComponentKey,
   StudentCountToggles,
+  StackBreakdown,
+  ComponentToggleItem,
   YearValueMap,
   YoySnapshot,
 } from './types';
 import { computeYoy, trendYearWindow } from './yoy';
+import { analyzeFormula } from './formula';
 
 export interface MonitoringBundle {
   /** 피벗에 요청한 전체 연도 (추이 창 포함) */
@@ -75,6 +84,23 @@ export interface MonitoringBundle {
       expenseLines: { name: string; values: HierarchyValues }[];
     }
   >;
+  formulas: Record<
+    string,
+    {
+      kpi: MonitoringKpiDef;
+      label: string;
+      unit: string | null;
+      found: boolean;
+      formulaLabel: string;
+      node: FormulaEvalNode;
+      values: HierarchyValues;
+      childLines: {
+        metricId: number;
+        name: string;
+        values: HierarchyValues;
+      }[];
+    }
+  >;
 }
 
 export interface KpiViewModel {
@@ -89,8 +115,10 @@ export interface KpiViewModel {
   depts: Record<string, YearValueMap>;
   yoy: YoySnapshot;
   kpi: MonitoringKpiDef;
-  /** 재학생 수: 켠 구성 항목별 학과 값 (비교 누적 차트용) */
+  /** 재학생 수·가감 계산식: 켠 구성 항목별 학과 값 (비교 누적 차트용) */
+  stackBreakdown?: StackBreakdown;
   studentBreakdown?: StudentCountBreakdown;
+  componentToggles?: ComponentToggleItem[];
   accounting?: {
     income: YearValueMap;
     expense: YearValueMap;
@@ -100,6 +128,11 @@ export interface KpiViewModel {
     expenseYoy: YoySnapshot;
     incomeLines: { name: string; univ: YearValueMap }[];
     expenseLines: { name: string; univ: YearValueMap }[];
+  };
+  formula?: {
+    expressionLabel: string;
+    kind: 'additive' | 'other';
+    lines: { name: string; univ: YearValueMap }[];
   };
 }
 
@@ -211,6 +244,7 @@ export async function fetchMonitoringBundle(): Promise<MonitoringBundle> {
 
   const directs: MonitoringBundle['directs'] = {};
   const accountings: MonitoringBundle['accountings'] = {};
+  const formulas: MonitoringBundle['formulas'] = {};
 
   const emptyAccounting = () => {
     for (const a of resolved.accountings) {
@@ -228,6 +262,25 @@ export async function fetchMonitoringBundle(): Promise<MonitoringBundle> {
     }
   };
 
+  const emptyFormulas = () => {
+    for (const f of resolved.formulas) {
+      formulas[f.kpi.id] = {
+        kpi: f.kpi,
+        label: f.label,
+        unit: f.unit,
+        found: f.found,
+        formulaLabel: f.formulaLabel,
+        node: f.node,
+        values: emptyHierarchy(years, deptCodes),
+        childLines: f.node.children.map((c) => ({
+          metricId: c.metricId,
+          name: c.name,
+          values: emptyHierarchy(years, deptCodes),
+        })),
+      };
+    }
+  };
+
   if (resolved.allMetricIds.length === 0) {
     for (const d of resolved.directs) {
       directs[d.kpi.id] = {
@@ -239,6 +292,7 @@ export async function fetchMonitoringBundle(): Promise<MonitoringBundle> {
       };
     }
     emptyAccounting();
+    emptyFormulas();
     return {
       years,
       availableYears,
@@ -249,6 +303,7 @@ export async function fetchMonitoringBundle(): Promise<MonitoringBundle> {
       studentComponents,
       studentMeta,
       accountings,
+      formulas,
     };
   }
 
@@ -337,6 +392,27 @@ export async function fetchMonitoringBundle(): Promise<MonitoringBundle> {
     };
   }
 
+  const rawById = new Map<number, HierarchyValues>();
+  for (const id of resolved.allMetricIds) {
+    rawById.set(
+      id,
+      extractHierarchy(rows, [id], years, org.univCode, deptCodes),
+    );
+  }
+
+  for (const f of resolved.formulas) {
+    formulas[f.kpi.id] = {
+      kpi: f.kpi,
+      label: f.label,
+      unit: f.unit,
+      found: f.found,
+      formulaLabel: f.formulaLabel,
+      node: f.node,
+      values: composeFormulaHierarchy(f.node, rawById, years, deptCodes),
+      childLines: formulaChildHierarchies(f.node, rawById, years, deptCodes),
+    };
+  }
+
   return {
     years,
     availableYears,
@@ -347,12 +423,24 @@ export async function fetchMonitoringBundle(): Promise<MonitoringBundle> {
     studentComponents,
     studentMeta,
     accountings,
+    formulas,
   };
 }
+
+export const STUDENT_TOGGLE_IDS: Record<
+  StudentCountComponentKey,
+  keyof StudentCountToggles
+> = {
+  inner: 'includeInner',
+  outer: 'includeOuter',
+  leave: 'includeLeave',
+  deferred: 'includeDeferred',
+};
 
 export function buildKpiViews(
   bundle: MonitoringBundle,
   toggles: StudentCountToggles,
+  formulaToggles: Record<string, Record<string, boolean>>,
   selectedYear: number,
 ): KpiViewModel[] {
   const org = bundle.org;
@@ -381,6 +469,13 @@ export function buildKpiViews(
             ) as StudentCountBreakdown['depts'],
           }
         : undefined;
+    const stackBreakdown: StackBreakdown | undefined = studentBreakdown
+      ? {
+          keys: [...studentBreakdown.keys],
+          labels: { ...studentBreakdown.labels },
+          depts: { ...studentBreakdown.depts },
+        }
+      : undefined;
     views.push({
       id: 'student-count',
       label: bundle.studentMeta.label,
@@ -399,6 +494,16 @@ export function buildKpiViews(
       ),
       kpi: bundle.studentMeta.kpi,
       studentBreakdown,
+      stackBreakdown,
+      componentToggles: (
+        Object.keys(STUDENT_COUNT_COMPONENT_SHORT_LABELS) as StudentCountComponentKey[]
+      ).map((key) => ({
+        id: key,
+        label: STUDENT_COUNT_COMPONENT_SHORT_LABELS[key],
+        on: toggles[STUDENT_TOGGLE_IDS[key]],
+        value: bundle.studentComponents[key]?.univ[selectedYear] ?? null,
+        sign: 1,
+      })),
     });
   }
 
@@ -457,6 +562,97 @@ export function buildKpiViews(
           univ: l.values.univ,
         })),
         expenseLines: entry.expenseLines.map((l) => ({
+          name: l.name,
+          univ: l.values.univ,
+        })),
+      },
+    });
+  }
+
+  for (const [id, entry] of Object.entries(bundle.formulas)) {
+    if (!entry.found) continue;
+    const analysis = analyzeFormula(entry.node.computeFormula);
+    const childMap = new Map(
+      entry.childLines.map((c) => [c.metricId, c.values]),
+    );
+    const kpiToggles = formulaToggles[id] ?? {};
+    const enabledTerms =
+      analysis.kind === 'additive'
+        ? analysis.terms.filter((t) => kpiToggles[String(t.metricId)] !== false)
+        : [];
+    const values =
+      analysis.kind === 'additive'
+        ? composeAdditiveHierarchy(
+            enabledTerms,
+            analysis.constant,
+            childMap,
+            years,
+            deptCodes,
+          )
+        : entry.values;
+
+    const stackBreakdown: StackBreakdown | undefined =
+      analysis.kind === 'additive' && enabledTerms.length > 0
+        ? {
+            keys: enabledTerms.map((t) => String(t.metricId)),
+            labels: Object.fromEntries(
+              enabledTerms.map((t) => {
+                const child = entry.childLines.find(
+                  (c) => c.metricId === t.metricId,
+                );
+                const name = child?.name ?? String(t.metricId);
+                return [String(t.metricId), t.coef < 0 ? `− ${name}` : name];
+              }),
+            ),
+            depts: Object.fromEntries(
+              enabledTerms.map((t) => {
+                const rawDepts = childMap.get(t.metricId)?.depts ?? {};
+                if (t.coef === 1) return [String(t.metricId), rawDepts];
+                const scaled: Record<string, YearValueMap> = {};
+                for (const [code, map] of Object.entries(rawDepts)) {
+                  scaled[code] = Object.fromEntries(
+                    Object.entries(map).map(([y, v]) => [
+                      y,
+                      v == null ? null : v * t.coef,
+                    ]),
+                  );
+                }
+                return [String(t.metricId), scaled];
+              }),
+            ),
+          }
+        : undefined;
+
+    views.push({
+      id: id as MonitoringKpiId,
+      label: entry.label,
+      unit: entry.unit,
+      found: entry.found,
+      hasHierarchy: hasHierarchyData(values.depts),
+      selectedYear,
+      years,
+      univ: values.univ,
+      depts: values.depts,
+      yoy: computeYoy(values.univ, years, entry.kpi.direction, selectedYear),
+      kpi: entry.kpi,
+      stackBreakdown,
+      componentToggles:
+        analysis.kind === 'additive'
+          ? analysis.terms.map((t) => {
+              const child = entry.childLines.find((c) => c.metricId === t.metricId);
+              return {
+                id: String(t.metricId),
+                label: child?.name ?? String(t.metricId),
+                on: kpiToggles[String(t.metricId)] !== false,
+                value: child?.values.univ[selectedYear] ?? null,
+                sign: t.coef < 0 ? (-1 as const) : (1 as const),
+              };
+            })
+          : undefined,
+      formula: {
+        expressionLabel: entry.formulaLabel,
+        kind: analysis.kind,
+        lines: entry.childLines.map((l) => ({
           name: l.name,
           univ: l.values.univ,
         })),

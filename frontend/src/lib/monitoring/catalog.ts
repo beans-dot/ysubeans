@@ -285,3 +285,10 @@ export function monitoringComputeRole(
   }
   return null;
 }
+
+/** 재학생·회계처럼 조회 화면 계산이 고정된 시드 지표 */
+export function isLockedAutoComputeMetric(
+  metricCode?: string | null,
+): boolean {
+  return monitoringComputeRole(metricCode) === 'computed';
+}

@@ -3,7 +3,6 @@
 import { MetricOverviewCard } from './MetricOverviewCard';
 import type { KpiViewModel } from '@/lib/monitoring/fetchMonitoringData';
 import type { MonitoringCategoryDef } from '@/lib/monitoring/types';
-import type { StudentCountToggles } from '@/lib/monitoring/types';
 
 export function CategorySection({
   category,
@@ -11,8 +10,7 @@ export function CategorySection({
   views,
   selectedId,
   onSelect,
-  studentToggles,
-  onStudentTogglesChange,
+  onComponentToggle,
 }: {
   category: MonitoringCategoryDef;
   /** 트리 빌더에서 바꾼 카테고리명. 없으면 category.title */
@@ -20,8 +18,7 @@ export function CategorySection({
   views: KpiViewModel[];
   selectedId: string | null;
   onSelect: (id: KpiViewModel['id']) => void;
-  studentToggles: StudentCountToggles;
-  onStudentTogglesChange: (next: StudentCountToggles) => void;
+  onComponentToggle: (kpiId: string, itemId: string, on: boolean) => void;
 }) {
   return (
     <section className="space-y-4">
@@ -36,11 +33,8 @@ export function CategorySection({
             view={view}
             selected={selectedId === view.id}
             onSelect={() => onSelect(view.id)}
-            studentToggles={
-              view.id === 'student-count' ? studentToggles : undefined
-            }
-            onStudentTogglesChange={
-              view.id === 'student-count' ? onStudentTogglesChange : undefined
+            onComponentToggle={(itemId, on) =>
+              onComponentToggle(view.id, itemId, on)
             }
           />
         ))}

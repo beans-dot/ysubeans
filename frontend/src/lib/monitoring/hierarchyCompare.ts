@@ -1,6 +1,6 @@
 import { aggregateDeptMaps } from './aggregate';
 import type { KpiViewModel } from './fetchMonitoringData';
-import type { OrgStructure, StudentCountComponentKey } from './types';
+import type { OrgStructure, YearValueMap } from './types';
 
 export type CompareKind = 'series' | 'dept';
 export type CompareSortKey = 'value' | 'name' | 'order';
@@ -13,28 +13,42 @@ export interface CompareBarRow {
   value: number | null;
   seriesOrder: number;
   deptOrder: number;
-  /** 재학생 수 구성 항목별 값. 2개 이상이면 누적 차트에 사용 */
-  parts?: Partial<Record<StudentCountComponentKey, number | null>>;
+  /** 구성 항목별 값. 2개 이상이면 누적 차트에 사용 */
+  parts?: Record<string, number | null>;
+}
+
+function stackOf(view: KpiViewModel): {
+  keys: string[];
+  labels: Record<string, string>;
+  depts: Record<string, Record<string, YearValueMap>>;
+} | null {
+  if (view.stackBreakdown) return view.stackBreakdown;
+  if (!view.studentBreakdown) return null;
+  return {
+    keys: [...view.studentBreakdown.keys],
+    labels: { ...view.studentBreakdown.labels },
+    depts: { ...view.studentBreakdown.depts },
+  };
 }
 
 function partValue(
   view: KpiViewModel,
-  key: StudentCountComponentKey,
+  key: string,
   deptCode: string,
   year: number,
 ): number | null {
-  return view.studentBreakdown?.depts[key]?.[deptCode]?.[year] ?? null;
+  return stackOf(view)?.depts[key]?.[deptCode]?.[year] ?? null;
 }
 
 function seriesPartValue(
   view: KpiViewModel,
-  key: StudentCountComponentKey,
+  key: string,
   deptCodes: string[],
   year: number,
   method: KpiViewModel['kpi']['seriesAggregation'],
 ): number | null {
   const maps = deptCodes.map(
-    (code) => view.studentBreakdown?.depts[key]?.[code] ?? {},
+    (code) => stackOf(view)?.depts[key]?.[code] ?? {},
   );
   return aggregateDeptMaps(maps, [year], method)[year] ?? null;
 }
@@ -46,7 +60,7 @@ function rowParts(
   kind: CompareKind,
   deptCode?: string,
 ): CompareBarRow['parts'] | undefined {
-  const keys = view.studentBreakdown?.keys;
+  const keys = stackOf(view)?.keys;
   if (!keys?.length) return undefined;
   const method = view.kpi.seriesAggregation;
   const parts: NonNullable<CompareBarRow['parts']> = {};

@@ -5,15 +5,19 @@ import { CategorySection } from './CategorySection';
 import { MetricDetailViewer } from './MetricDetailViewer';
 import { MonitoringYearSelector } from './MonitoringYearSelector';
 import { ScrollToTopButton } from './ScrollToTopButton';
-import { MONITORING_CATEGORIES } from '@/lib/monitoring/catalog';
 import { DEFAULT_STUDENT_COUNT_TOGGLES } from '@/lib/monitoring/catalog';
 import {
   buildKpiViews,
   fetchMonitoringBundle,
+  STUDENT_TOGGLE_IDS,
   type KpiViewModel,
   type MonitoringBundle,
 } from '@/lib/monitoring/fetchMonitoringData';
-import type { MonitoringKpiId, StudentCountToggles } from '@/lib/monitoring/types';
+import type {
+  MonitoringKpiId,
+  StudentCountComponentKey,
+  StudentCountToggles,
+} from '@/lib/monitoring/types';
 
 export function MonitoringDashboard() {
   const [bundle, setBundle] = useState<MonitoringBundle | null>(null);
@@ -22,6 +26,9 @@ export function MonitoringDashboard() {
   const [toggles, setToggles] = useState<StudentCountToggles>(
     DEFAULT_STUDENT_COUNT_TOGGLES,
   );
+  const [formulaToggles, setFormulaToggles] = useState<
+    Record<string, Record<string, boolean>>
+  >({});
   const [selectedId, setSelectedId] = useState<MonitoringKpiId | null>(null);
   const [selectedYear, setSelectedYear] = useState<number>(
     () => new Date().getFullYear(),
@@ -57,8 +64,11 @@ export function MonitoringDashboard() {
   }, []);
 
   const views = useMemo(
-    () => (bundle ? buildKpiViews(bundle, toggles, selectedYear) : []),
-    [bundle, toggles, selectedYear],
+    () =>
+      bundle
+        ? buildKpiViews(bundle, toggles, formulaToggles, selectedYear)
+        : [],
+    [bundle, toggles, formulaToggles, selectedYear],
   );
 
   const viewMap = useMemo(() => {
@@ -69,6 +79,23 @@ export function MonitoringDashboard() {
 
   const selected = selectedId ? viewMap.get(selectedId) ?? null : null;
   const yearOptions = bundle?.availableYears ?? [];
+
+  const onComponentToggle = (
+    kpiId: string,
+    itemId: string,
+    on: boolean,
+  ) => {
+    if (kpiId === 'student-count') {
+      const field = STUDENT_TOGGLE_IDS[itemId as StudentCountComponentKey];
+      if (!field) return;
+      setToggles((prev) => ({ ...prev, [field]: on }));
+      return;
+    }
+    setFormulaToggles((prev) => ({
+      ...prev,
+      [kpiId]: { ...(prev[kpiId] ?? {}), [itemId]: on },
+    }));
+  };
 
   const onSelect = (id: MonitoringKpiId) => {
     setSelectedId(id);
@@ -110,10 +137,11 @@ export function MonitoringDashboard() {
           </p>
         </header>
         <div className="space-y-10">
-          {MONITORING_CATEGORIES.map((category) => {
+          {(bundle?.sections ?? []).map((category) => {
             const categoryViews = category.kpiIds
               .map((id) => viewMap.get(id))
               .filter((v): v is KpiViewModel => !!v);
+            if (categoryViews.length === 0) return null;
             return (
               <CategorySection
                 key={category.id}
@@ -122,8 +150,7 @@ export function MonitoringDashboard() {
                 views={categoryViews}
                 selectedId={selectedId}
                 onSelect={onSelect}
-                studentToggles={toggles}
-                onStudentTogglesChange={setToggles}
+                onComponentToggle={onComponentToggle}
               />
             );
           })}
@@ -149,7 +176,11 @@ export function MonitoringDashboard() {
           </p>
         </header>
         {selected ? (
-          <MetricDetailViewer view={selected} org={bundle!.org} />
+          <MetricDetailViewer
+            key={`${selected.id}-${selected.selectedYear}-${selected.hasHierarchy ? 'h' : 'n'}-${selected.stackBreakdown?.keys.join('-') ?? selected.studentBreakdown?.keys.join('-') ?? 'plain'}`}
+            view={selected}
+            org={bundle!.org}
+          />
         ) : (
           <div className="rounded-md border border-dashed bg-background px-4 py-12 text-center text-sm text-muted-foreground">
             위 지표 카드를 선택하면 이 영역에 상세 내용이 표시됩니다.

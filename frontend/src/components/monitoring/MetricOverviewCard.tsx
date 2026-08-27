@@ -5,12 +5,9 @@ import { cn } from '@/lib/utils';
 import { formatValueWithUnit } from '@/lib/dataFormatters';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { StudentCountToggles } from './StudentCountToggles';
+import { SubmetricToggles } from './SubmetricToggles';
 import type { KpiViewModel } from '@/lib/monitoring/fetchMonitoringData';
-import type {
-  StudentCountToggles as StudentCountToggleState,
-  YoySnapshot,
-} from '@/lib/monitoring/types';
+import type { YoySnapshot } from '@/lib/monitoring/types';
 
 function formatDelta(delta: number | null, unit: string | null): string {
   if (delta == null) return '-';
@@ -22,14 +19,12 @@ export function MetricOverviewCard({
   view,
   selected,
   onSelect,
-  studentToggles,
-  onStudentTogglesChange,
+  onComponentToggle,
 }: {
   view: KpiViewModel;
   selected: boolean;
   onSelect: () => void;
-  studentToggles?: StudentCountToggleState;
-  onStudentTogglesChange?: (next: StudentCountToggleState) => void;
+  onComponentToggle?: (itemId: string, on: boolean) => void;
 }) {
   const { yoy } = view;
   const improved = yoy.isImprovement;
@@ -59,11 +54,13 @@ export function MetricOverviewCard({
       <CardHeader className="space-y-2 p-4 pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-sm leading-snug">{view.label}</CardTitle>
-          {!view.found ? (
-            <Badge variant="secondary">미등록</Badge>
-          ) : !view.hasHierarchy ? (
-            <Badge variant="outline">대학 단위</Badge>
-          ) : null}
+          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+            {!view.found ? (
+              <Badge variant="secondary">미등록</Badge>
+            ) : !view.hasHierarchy ? (
+              <Badge variant="outline">대학 단위</Badge>
+            ) : null}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3 p-4 pt-0">
@@ -106,12 +103,18 @@ export function MetricOverviewCard({
                 전년 대비
               </span>
             </div>
+            {view.formula?.kind === 'other' && view.formula.expressionLabel ? (
+              <p className="text-xs text-muted-foreground">
+                {view.formula.expressionLabel}
+              </p>
+            ) : null}
           </>
         )}
-        {view.id === 'student-count' && studentToggles && onStudentTogglesChange ? (
-          <StudentCountToggles
-            value={studentToggles}
-            onChange={onStudentTogglesChange}
+        {view.componentToggles && onComponentToggle ? (
+          <SubmetricToggles
+            items={view.componentToggles}
+            unit={view.unit}
+            onChange={onComponentToggle}
           />
         ) : null}
       </CardContent>

@@ -126,11 +126,16 @@ export class MetricsController {
     return this.metricsService.setMetricHidden(id, !!body.isHidden);
   }
 
-  /** 지표명 변경 (자체 데이터 지표만 허용) */
+  /** 지표명·자동계산식 변경 (자체 데이터·모니터링) */
   @Put(':id')
   updateMetric(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { metricName: string },
+    @Body()
+    body: {
+      metricName?: string;
+      computeFormula?: string | null;
+      computeEnabled?: boolean;
+    },
   ) {
     return this.metricsService.updateMetric(id, body);
   }

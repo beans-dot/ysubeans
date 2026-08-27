@@ -11,6 +11,11 @@ import {
   IrRawData,
   type MetricSourceType,
 } from '../../entities';
+import {
+  FormulaError,
+  isLockedAutoComputeMetric,
+  validateMetricFormula,
+} from './metric-formula';
 import { UNCATEGORIZED_CATEGORY_NAME } from './metric.constants';
 import {
   hasDeptLevelMetricSuffix,
@@ -33,6 +38,10 @@ export interface MetricNode {
   displayOrder: number;
   parentMetricId: number | null;
   isHidden: boolean;
+  computeFormula: string | null;
+  computeEnabled: boolean;
+  /** 이 지표 자체(상위)에 업로드된 원본 값이 있는지 */
+  hasRawData: boolean;
   children: MetricNode[];
 }
 
@@ -156,6 +165,23 @@ export class MetricsService {
   /** 해당 지표에 연결된 원본 데이터 건수 */
   private async rawDataCount(metricId: number): Promise<number> {
     return this.metricRepo.manager.count(IrRawData, { where: { metricId } });
+  }
+
+  private async metricsWithRawData(metricIds: number[]): Promise<Set<number>> {
+    const ids = [...new Set(metricIds.filter((id) => Number.isFinite(id)))];
+    if (ids.length === 0) return new Set();
+    const rows = await this.metricRepo.manager
+      .createQueryBuilder(IrRawData, 'r')
+      .select('r.metricId', 'metricId')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('r.metricId IN (:...ids)', { ids })
+      .groupBy('r.metricId')
+      .getRawMany<{ metricId: string | number; cnt: string | number }>();
+    return new Set(
+      rows
+        .filter((row) => Number(row.cnt) > 0)
+        .map((row) => Number(row.metricId)),
+    );
   }
 
   /** 모니터링 지표에 실제 값이 있는 연도 (내림차순) */
@@ -387,7 +413,10 @@ export class MetricsService {
     }
   }
 
-  private toMetricNode(m: IrMetricRegistry): MetricNode {
+  private toMetricNode(
+    m: IrMetricRegistry,
+    hasRawData = false,
+  ): MetricNode {
     return {
       metricId: m.metricId,
       metricCode: m.metricCode ?? null,
@@ -397,6 +426,9 @@ export class MetricsService {
       displayOrder: m.displayOrder,
       parentMetricId: m.parentMetricId ?? null,
       isHidden: !!m.isHidden,
+      computeFormula: m.computeFormula ?? null,
+      computeEnabled: !!m.computeEnabled,
+      hasRawData,
       children: [],
     };
   }
@@ -410,10 +442,13 @@ export class MetricsService {
       }));
   }
 
-  private nestMetrics(metrics: IrMetricRegistry[]): MetricNode[] {
+  private nestMetrics(
+    metrics: IrMetricRegistry[],
+    rawDataIds: Set<number>,
+  ): MetricNode[] {
     const nodes = new Map<number, MetricNode>();
     for (const m of metrics) {
-      nodes.set(m.metricId, this.toMetricNode(m));
+      nodes.set(m.metricId, this.toMetricNode(m, rawDataIds.has(m.metricId)));
     }
     const roots: MetricNode[] = [];
     const sorted = [...metrics].sort(
@@ -461,6 +496,9 @@ export class MetricsService {
       where: sourceType ? { sourceType } : undefined,
       order: { displayOrder: 'ASC', metricId: 'ASC' },
     });
+    const rawDataIds = await this.metricsWithRawData(
+      metrics.map((m) => m.metricId),
+    );
 
     let nodes: CategoryTreeNode[] = categories.map((cat) => ({
       categoryId: cat.categoryId,
@@ -471,6 +509,7 @@ export class MetricsService {
       isHidden: !!cat.isHidden,
       metrics: this.nestMetrics(
         metrics.filter((m) => m.categoryId === cat.categoryId),
+        rawDataIds,
       ),
     }));
 
@@ -665,41 +704,102 @@ export class MetricsService {
   }
 
   /**
-   * 지표명 변경. metric_id·metric_code는 유지되므로 원본 데이터, 프리셋,
+   * 지표명·자동계산식 변경. metric_id·metric_code는 유지되므로 원본 데이터, 프리셋,
    * 모니터링 KPI 매칭이 그대로 유지된다.
-   * 대학정보공시(ALIMI)는 알리미 배치가 지표명으로 값을 다시 물기 때문에 수정 불가.
+   * 대학정보공시(ALIMI)는 알리미 배치가 지표명으로 값을 다시 물기 때문에 이름 수정 불가.
    */
   async updateMetric(
     metricId: number,
-    data: { metricName: string },
+    data: {
+      metricName?: string;
+      computeFormula?: string | null;
+      computeEnabled?: boolean;
+    },
   ): Promise<IrMetricRegistry> {
     const metric = await this.metricRepo.findOne({ where: { metricId } });
     if (!metric) {
       throw new NotFoundException('지표를 찾을 수 없습니다.');
     }
-    if (metric.sourceType === 'ALIMI') {
-      throw new BadRequestException(
-        '대학정보공시 지표명은 변경할 수 없습니다. 자체 데이터·모니터링 지표만 수정할 수 있습니다.',
-      );
+
+    const hasName = data.metricName !== undefined;
+    const hasFormula = data.computeFormula !== undefined;
+    const hasEnabled = data.computeEnabled !== undefined;
+    if (!hasName && !hasFormula && !hasEnabled) {
+      throw new BadRequestException('수정할 항목이 없습니다.');
     }
 
-    const input = data.metricName?.trim();
-    if (!input) {
-      throw new BadRequestException('지표명을 입력해 주세요.');
+    if (hasName) {
+      if (metric.sourceType === 'ALIMI') {
+        throw new BadRequestException(
+          '대학정보공시 지표명은 변경할 수 없습니다. 자체 데이터·모니터링 지표만 수정할 수 있습니다.',
+        );
+      }
+
+      const input = data.metricName?.trim();
+      if (!input) {
+        throw new BadRequestException('지표명을 입력해 주세요.');
+      }
+      if (input.length > 300) {
+        throw new BadRequestException('지표명은 300자 이내로 입력해 주세요.');
+      }
+
+      // 학과단위 데이터가 있는 지표는 (학과별) 접미사를 유지해야 업로드 동기화와 어긋나지 않는다.
+      const name = hasDeptLevelMetricSuffix(metric.metricName)
+        ? withDeptLevelMetricSuffix(input)
+        : input;
+
+      if (name !== metric.metricName) {
+        await this.assertMetricNameAvailable(metric, name);
+        metric.metricName = name;
+      }
     }
-    if (input.length > 300) {
-      throw new BadRequestException('지표명은 300자 이내로 입력해 주세요.');
+
+    if (hasFormula || hasEnabled) {
+      if (metric.sourceType !== 'MONITORING') {
+        throw new BadRequestException(
+          '자동계산식은 대학주요모니터링 지표에만 설정할 수 있습니다.',
+        );
+      }
+      if (isLockedAutoComputeMetric(metric.metricCode)) {
+        throw new BadRequestException(
+          '이 지표는 조회 화면의 계산 방식이 고정되어 있어 계산식을 바꿀 수 없습니다.',
+        );
+      }
+
+      if (hasFormula) {
+        const raw = data.computeFormula;
+        metric.computeFormula =
+          raw == null || String(raw).trim() === ''
+            ? null
+            : String(raw).trim();
+      }
+      if (hasEnabled) {
+        metric.computeEnabled = !!data.computeEnabled;
+      }
+
+      if (metric.computeEnabled) {
+        if (!metric.computeFormula) {
+          throw new BadRequestException(
+            '자동계산을 켜려면 하위지표 계산식을 입력해 주세요.',
+          );
+        }
+        const children = await this.metricRepo.find({
+          where: { parentMetricId: metric.metricId },
+        });
+        try {
+          validateMetricFormula(
+            metric.computeFormula,
+            children.map((c) => c.metricId),
+          );
+        } catch (e) {
+          if (e instanceof FormulaError) {
+            throw new BadRequestException(e.message);
+          }
+          throw e;
+        }
+      }
     }
 
-    // 학과단위 데이터가 있는 지표는 (학과별) 접미사를 유지해야 업로드 동기화와 어긋나지 않는다.
-    const name = hasDeptLevelMetricSuffix(metric.metricName)
-      ? withDeptLevelMetricSuffix(input)
-      : input;
-
-    if (name === metric.metricName) return metric;
-    await this.assertMetricNameAvailable(metric, name);
-
-    metric.metricName = name;
     return this.metricRepo.save(metric);
   }
 

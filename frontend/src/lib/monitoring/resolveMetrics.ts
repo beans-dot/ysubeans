@@ -5,13 +5,17 @@ import {
   MONITORING_KPI_MAP,
   STUDENT_COUNT_COMPONENT_CODES,
   STUDENT_COUNT_COMPONENT_NAMES,
+  isLockedAutoComputeMetric,
 } from './catalog';
+import { collectFormulaMetricIds, toFormulaEvalNode } from './composeFormula';
+import { formulaToDisplay } from './formula';
 import type {
   MonitoringCategoryDef,
   MonitoringKpiDef,
   ResolvedAccountingKpi,
   ResolvedCompositeKpi,
   ResolvedDirectKpi,
+  ResolvedFormulaKpi,
   StudentCountComponentKey,
 } from './types';
 
@@ -201,7 +205,8 @@ function resolveDirect(
   ];
   const unique = new Map(nodes.map((n) => [n.metricId, n]));
   const list = Array.from(unique.values());
-  const ids = [...new Set(list.flatMap(collectLeafIds))];
+  // 하위지표가 있어도 자동계산이 꺼져 있으면 이 지표 자체 값만 사용한다.
+  const ids = [...new Set(list.map((n) => n.metricId))];
   ids.forEach((id) => idSet.add(id));
   return {
     kpi,
@@ -212,6 +217,37 @@ function resolveDirect(
   };
 }
 
+function canUseFormula(node: MetricNode): boolean {
+  return (
+    !!node.computeEnabled &&
+    !!node.computeFormula &&
+    !isLockedAutoComputeMetric(node.metricCode)
+  );
+}
+
+function resolveFormula(
+  kpi: MonitoringKpiDef,
+  node: MetricNode,
+  idSet: Set<number>,
+): ResolvedFormulaKpi {
+  const evalNode = toFormulaEvalNode(node);
+  const metricIds = collectFormulaMetricIds(evalNode);
+  metricIds.forEach((id) => idSet.add(id));
+  const children = (node.children ?? []).map((c) => ({
+    metricId: c.metricId,
+    metricName: c.metricName,
+  }));
+  return {
+    kpi: { ...kpi, kind: 'formula' },
+    label: displayName(node, kpi.label),
+    unit: node.metricUnit ?? kpi.fallbackUnit,
+    found: true,
+    node: evalNode,
+    formulaLabel: formulaToDisplay(node.computeFormula, children),
+    metricIds,
+  };
+}
+
 /**
  * DB 지표 트리를 기준으로 현황 보드 KPI를 구성한다.
  * - 트리에 없는(삭제·숨김) 시드 KPI는 카드에 나오지 않는다.
@@ -219,6 +255,7 @@ function resolveDirect(
  */
 export function resolveMonitoringMetrics(tree: CategoryTreeNode[]): {
   directs: ResolvedDirectKpi[];
+  formulas: ResolvedFormulaKpi[];
   composite: ResolvedCompositeKpi | null;
   accountings: ResolvedAccountingKpi[];
   allMetricIds: number[];
@@ -231,6 +268,7 @@ export function resolveMonitoringMetrics(tree: CategoryTreeNode[]): {
   }
 
   const directs: ResolvedDirectKpi[] = [];
+  const formulas: ResolvedFormulaKpi[] = [];
   const accountings: ResolvedAccountingKpi[] = [];
   const idSet = new Set<number>();
   let composite: ResolvedCompositeKpi | null = null;
@@ -269,14 +307,22 @@ export function resolveMonitoringMetrics(tree: CategoryTreeNode[]): {
         continue;
       }
 
-      const directKpi =
+      const baseKpi =
         catalogKpi?.kind === 'direct'
           ? catalogKpi
           : synthesizeDirectKpi(root, catId);
-      const resolved = resolveDirect(directKpi, root, metrics, idSet);
+
+      if (canUseFormula(root)) {
+        const resolved = resolveFormula(baseKpi, root, idSet);
+        formulas.push(resolved);
+        kpiIds.push(resolved.kpi.id);
+        continue;
+      }
+
+      const resolved = resolveDirect(baseKpi, root, metrics, idSet);
       if (!resolved.found) continue;
       directs.push(resolved);
-      kpiIds.push(directKpi.id);
+      kpiIds.push(baseKpi.id);
     }
 
     if (kpiIds.length === 0) continue;
@@ -290,6 +336,7 @@ export function resolveMonitoringMetrics(tree: CategoryTreeNode[]): {
 
   return {
     directs,
+    formulas,
     composite,
     accountings,
     allMetricIds: Array.from(idSet),
