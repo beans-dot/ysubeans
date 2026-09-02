@@ -133,6 +133,24 @@ export interface SpFundSource {
   abolishedFrom?: number | null;
 }
 
+export interface SpWriteLock {
+  taskCode: string;
+  year: number;
+  budgetCompleted: boolean;
+  evalCompleted: boolean;
+}
+
+export type SpFullRevisionScope = 'structure' | 'kpi' | 'fund';
+
+export interface SpFullRevision {
+  revisionId: number;
+  year: number;
+  snapshotYear: number;
+  scope: SpFullRevisionScope;
+  createdBy: string | null;
+  createdAt: string;
+}
+
 export interface SpChangeLog {
   logId: number;
   year: number;

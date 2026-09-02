@@ -7,9 +7,11 @@ import {
   fetchSpEvaluations,
   fetchSpFundSources,
   fetchSpTree,
+  fetchSpWriteLocks,
   saveSpBudget,
   saveSpEvaluation,
   saveSpKpiResult,
+  saveSpWriteLock,
 } from '@/lib/strategic-plan/api';
 import { parseAmount } from '@/lib/strategic-plan/format';
 import type {
@@ -21,6 +23,12 @@ import type {
   SpTree,
   SpVision,
 } from '@/lib/strategic-plan/types';
+
+export type SpWriteLockKind = 'budget' | 'eval';
+export type SpWriteLockMap = Record<
+  string,
+  { budgetCompleted: boolean; evalCompleted: boolean }
+>;
 
 export type SpView =
   | 'vision'
@@ -92,6 +100,7 @@ interface StrategicPlanState {
   fundSources: SpFundSource[];
   evaluations: Record<string, SpEvaluationDraft>;
   budgets: SpBudgetDraft;
+  writeLocks: SpWriteLockMap;
 
   loading: boolean;
   entryLoading: boolean;
@@ -143,6 +152,11 @@ interface StrategicPlanState {
   ) => void;
   copyPreviousYearBudgets: () => Promise<string | null>;
   setKpiResult: (kpiCode: string, value: string) => void;
+  setWriteLock: (
+    taskCode: string,
+    kind: SpWriteLockKind,
+    isCompleted: boolean,
+  ) => Promise<void>;
   patchVision: (partial: Partial<SpVision>) => void;
 }
 
@@ -151,6 +165,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   fundSources: [],
   evaluations: {},
   budgets: {},
+  writeLocks: {},
 
   loading: false,
   entryLoading: false,
@@ -190,9 +205,10 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   loadEntries: async (year) => {
     set({ entryLoading: true });
     try {
-      const [evaluations, budgets] = await Promise.all([
+      const [evaluations, budgets, locks] = await Promise.all([
         fetchSpEvaluations(year),
         fetchSpBudgets(year),
+        fetchSpWriteLocks(year),
       ]);
       const evalDraft: Record<string, SpEvaluationDraft> = {};
       for (const e of evaluations) {
@@ -225,9 +241,17 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
             b.settlementAmount === null ? '' : String(b.settlementAmount),
         };
       }
+      const writeLocks: SpWriteLockMap = {};
+      for (const lock of locks) {
+        writeLocks[lock.taskCode] = {
+          budgetCompleted: lock.budgetCompleted,
+          evalCompleted: lock.evalCompleted,
+        };
+      }
       set({
         evaluations: evalDraft,
         budgets: budgetDraft,
+        writeLocks,
         entryLoading: false,
       });
     } catch {
@@ -291,6 +315,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
     }),
 
   setEvaluationField: (taskCode, field, value) => {
+    if (get().writeLocks[taskCode]?.evalCompleted) return;
     const year = get().year;
     set((state) => ({
       evaluations: {
@@ -313,6 +338,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   },
 
   setEvaluationData: (taskCode, patch) => {
+    if (get().writeLocks[taskCode]?.evalCompleted) return;
     const year = get().year;
     const keys = Object.keys(patch).join(',');
     set((state) => {
@@ -381,6 +407,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   },
 
   setBudgetField: (taskCode, subtaskCode, fundSourceId, kind, value) => {
+    if (get().writeLocks[taskCode]?.budgetCompleted) return;
     const year = get().year;
     const key = budgetKey(taskCode, subtaskCode, fundSourceId);
     set((state) => {
@@ -433,8 +460,12 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
         skippedFunds.length > 0
           ? `폐지된 재원(${skippedFunds.map((f) => f.fundSourceName).join(', ')})은 제외하고 복사하였습니다.`
           : null;
+      const locks = get().writeLocks;
       const toCopy = prev.filter(
-        (b) => b.budgetAmount !== null && activeIds.has(b.fundSourceId),
+        (b) =>
+          b.budgetAmount !== null &&
+          activeIds.has(b.fundSourceId) &&
+          !locks[b.taskCode]?.budgetCompleted,
       );
       if (toCopy.length === 0) {
         if (skippedNotice) {
@@ -466,6 +497,39 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
     } catch {
       set({ saveError: '전년도 예산을 복사하지 못했습니다.' });
       return null;
+    } finally {
+      set((s) => ({ pendingSaves: Math.max(0, s.pendingSaves - 1) }));
+    }
+  },
+
+  setWriteLock: async (taskCode, kind, isCompleted) => {
+    const year = get().year;
+    set({ saveError: null });
+    set((s) => ({ pendingSaves: s.pendingSaves + 1 }));
+    try {
+      const saved = await saveSpWriteLock({
+        taskCode,
+        year,
+        kind,
+        isCompleted,
+      });
+      set((state) => ({
+        writeLocks: {
+          ...state.writeLocks,
+          [taskCode]: {
+            budgetCompleted: saved.budgetCompleted,
+            evalCompleted: saved.evalCompleted,
+          },
+        },
+      }));
+      notifyAutoSaved(isCompleted ? '작성완료 되었습니다.' : '수정 가능합니다.');
+    } catch {
+      set({
+        saveError:
+          kind === 'budget'
+            ? '예결산 작성완료 변경에 실패했습니다.'
+            : '자체평가 작성완료 변경에 실패했습니다.',
+      });
     } finally {
       set((s) => ({ pendingSaves: Math.max(0, s.pendingSaves - 1) }));
     }

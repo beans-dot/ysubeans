@@ -7,9 +7,11 @@ import type {
   SpEvaluation,
   SpEvaluationDraft,
   SpFundSource,
+  SpFullRevision,
   SpKpi,
   SpTree,
   SpVision,
+  SpWriteLock,
 } from './types';
 
 export async function fetchSpTree(year?: number) {
@@ -67,6 +69,45 @@ export async function fetchSpBudgets(year: number) {
   const { data } = await api.get<SpBudget[]>('/strategic-plan/budgets', {
     params: { year },
   });
+  return data;
+}
+
+export async function fetchSpWriteLocks(year: number) {
+  const { data } = await api.get<SpWriteLock[]>(
+    '/strategic-plan/write-locks',
+    { params: { year } },
+  );
+  return data;
+}
+
+export async function saveSpWriteLock(payload: {
+  taskCode: string;
+  year: number;
+  kind: 'budget' | 'eval';
+  isCompleted: boolean;
+}) {
+  const { data } = await api.put<SpWriteLock>(
+    '/strategic-plan/write-locks',
+    payload,
+  );
+  return data;
+}
+
+export async function fetchSpFullRevisions() {
+  const { data } = await api.get<SpFullRevision[]>(
+    '/strategic-plan/full-revisions',
+  );
+  return data;
+}
+
+export async function createSpFullRevision(payload: {
+  year: number;
+  scope: SpFullRevision['scope'];
+}) {
+  const { data } = await api.post<SpFullRevision>(
+    '/strategic-plan/full-revisions',
+    payload,
+  );
   return data;
 }
 

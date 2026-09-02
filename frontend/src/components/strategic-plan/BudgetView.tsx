@@ -26,6 +26,7 @@ import {
   unitBudgetRows,
 } from './BudgetAmountTable';
 import { TaskHeading } from './TaskHeading';
+import { WriteCompleteControls } from './WriteCompleteControls';
 import { EmptyState } from './ui';
 
 function taskTotals(
@@ -60,11 +61,18 @@ function BudgetTaskCard({
   readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const setWriteLock = useStrategicPlanStore((s) => s.setWriteLock);
+  const completed = useStrategicPlanStore(
+    (s) => s.writeLocks[task.taskCode]?.budgetCompleted ?? false,
+  );
   const { units, budgetTotal, settlementTotal, status } = taskTotals(
     budgets,
     task,
     fundSources,
   );
+  const locked = readOnly || completed;
+  const badgeStatus = completed ? 'done' : status;
+  const badgeLabel = completed ? '작성완료' : SP_STATUS_LABEL[status];
 
   return (
     <Card>
@@ -88,9 +96,9 @@ function BudgetTaskCard({
           </span>
           <Badge
             variant="outline"
-            className={cn('mt-1', SP_STATUS_CLASS[status])}
+            className={cn('mt-1', SP_STATUS_CLASS[badgeStatus])}
           >
-            {SP_STATUS_LABEL[status]}
+            {badgeLabel}
           </Badge>
         </span>
       </button>
@@ -106,7 +114,7 @@ function BudgetTaskCard({
               displayCode={unit.displayCode}
               fundSources={fundSources}
               year={year}
-              readOnly={readOnly}
+              readOnly={locked}
             />
           ))}
           <TaskBudgetGrandTotal
@@ -116,6 +124,20 @@ function BudgetTaskCard({
             year={year}
             budgetTotal={budgetTotal}
             settlementTotal={settlementTotal}
+            completeControls={
+              !readOnly ? (
+                <WriteCompleteControls
+                  className="mt-3"
+                  completed={completed}
+                  onComplete={() =>
+                    void setWriteLock(task.taskCode, 'budget', true)
+                  }
+                  onEdit={() =>
+                    void setWriteLock(task.taskCode, 'budget', false)
+                  }
+                />
+              ) : undefined
+            }
           />
         </CardContent>
       )}

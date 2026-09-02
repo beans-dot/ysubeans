@@ -22,6 +22,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtPayload } from '../auth/jwt-payload';
 import {
   CreateDepartmentDto,
+  CreateFullRevisionDto,
   CreateFundSourceDto,
   CreateSubtaskDto,
   KpiValueDto,
@@ -37,6 +38,7 @@ import {
   UpdateVisionDto,
   UpsertBudgetDto,
   UpsertEvaluationDto,
+  UpsertWriteLockDto,
   UpsertGoalDto,
   UpsertKpiDto,
   UpsertStrategyDto,
@@ -99,7 +101,35 @@ export class StrategicPlanController {
     return this.service.upsertBudget(dto, user.sub);
   }
 
+  @Get('write-locks')
+  listWriteLocks(@Query() query: YearQueryDto) {
+    return this.service.listWriteLocks(query.year);
+  }
+
+  @Put('write-locks')
+  upsertWriteLock(
+    @Body() dto: UpsertWriteLockDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.upsertWriteLock(dto, user.sub);
+  }
+
   /* ── 관리자: 체계 ── */
+
+  @Roles('admin')
+  @Get('full-revisions')
+  listFullRevisions() {
+    return this.service.listFullRevisions();
+  }
+
+  @Roles('admin')
+  @Post('full-revisions')
+  createFullRevision(
+    @Body() dto: CreateFullRevisionDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.createFullRevision(dto, user.sub);
+  }
 
   @Roles('admin')
   @Get('changes')

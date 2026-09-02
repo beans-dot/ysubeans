@@ -15,7 +15,9 @@ import {
   IrSpSubtask,
   IrSpTask,
   IrSpTaskBudget,
+  IrSpFullRevision,
   IrSpVision,
+  IrSpWriteLock,
 } from '../../entities';
 import { InternalOrgModule } from '../internal-org/internal-org.module';
 import { SpStructureService } from './sp-structure.service';
@@ -40,6 +42,8 @@ import { StrategicPlanService } from './strategic-plan.service';
       IrSpTaskBudget,
       IrSpItemVersion,
       IrSpChangeLog,
+      IrSpWriteLock,
+      IrSpFullRevision,
     ]),
     InternalOrgModule,
   ],

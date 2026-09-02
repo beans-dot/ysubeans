@@ -41,11 +41,13 @@ function ValueCell({
   year,
   initial,
   label,
+  readOnly,
 }: {
   kpiCode: string;
   year: number;
   initial: number | null;
   label: string;
+  readOnly?: boolean;
 }) {
   const [value, setValue] = useState(initial === null ? '' : String(initial));
 
@@ -64,8 +66,11 @@ function ValueCell({
   return (
     <Input
       value={value}
+      readOnly={readOnly}
       onChange={(e) => setValue(e.target.value)}
-      onBlur={() => void commit()}
+      onBlur={() => {
+        if (!readOnly) void commit();
+      }}
       inputMode="decimal"
       aria-label={label}
       className="h-8 w-24 text-left tabular-nums"
@@ -101,11 +106,13 @@ function KpiMetaEditor({
   years,
   departments,
   reload,
+  readOnly = false,
 }: {
   kpi: SpKpi;
   years: number[];
   departments: SpDepartment[];
   reload: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [applyYear, setApplyYear] = useState(years[years.length - 1]);
   const [kpiName, setKpiName] = useState(kpi.kpiName);
@@ -197,6 +204,7 @@ function KpiMetaEditor({
             id={`kc-${kpi.kpiCode}`}
             value={letter}
             maxLength={1}
+            readOnly={readOnly}
             onChange={(e) =>
               setLetter(e.target.value.replace(/[^a-zA-Z]/g, '').toLowerCase())
             }
@@ -212,6 +220,7 @@ function KpiMetaEditor({
         <Input
           id={`kn-${kpi.kpiCode}`}
           value={kpiName}
+          readOnly={readOnly}
           onChange={(e) => setKpiName(e.target.value)}
           className="h-9"
         />
@@ -223,6 +232,7 @@ function KpiMetaEditor({
         <Input
           id={`ku-${kpi.kpiCode}`}
           value={unit}
+          readOnly={readOnly}
           onChange={(e) => setUnit(e.target.value)}
           className="h-9"
         />
@@ -234,6 +244,7 @@ function KpiMetaEditor({
         <NativeSelect
           id={`kd-${kpi.kpiCode}`}
           value={primaryDept}
+          disabled={readOnly}
           onChange={(e) => setPrimaryDept(e.target.value)}
         >
           <option value="">선택</option>
@@ -253,6 +264,7 @@ function KpiMetaEditor({
         <Input
           id={`kb-${kpi.kpiCode}`}
           value={baseline}
+          readOnly={readOnly}
           onChange={(e) => setBaseline(e.target.value)}
           inputMode="decimal"
           className="h-9 text-left"
@@ -265,6 +277,7 @@ function KpiMetaEditor({
         <Input
           id={`kbr-${kpi.kpiCode}`}
           value={baselineRef}
+          readOnly={readOnly}
           onChange={(e) => setBaselineRef(e.target.value)}
           className="h-9"
         />
@@ -276,6 +289,7 @@ function KpiMetaEditor({
         <Textarea
           id={`kf-${kpi.kpiCode}`}
           value={formula}
+          readOnly={readOnly}
           onChange={(e) => setFormula(e.target.value)}
           className="min-h-[60px]"
         />
@@ -291,33 +305,36 @@ function KpiMetaEditor({
                 year={y}
                 initial={kpi.targets[y] ?? null}
                 label={`${kpi.kpiCode} ${y} 목표`}
+                readOnly={readOnly}
               />
             </div>
           ))}
         </div>
       </div>
-      <div className="flex justify-end gap-1 sm:col-span-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-          disabled={busy}
-          onClick={() => void saveMeta()}
-        >
-          수정
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-          disabled={busy}
-          onClick={() => void abolish()}
-        >
-          폐지
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="flex justify-end gap-1 sm:col-span-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+            disabled={busy}
+            onClick={() => void saveMeta()}
+          >
+            수정
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+            disabled={busy}
+            onClick={() => void abolish()}
+          >
+            폐지
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -325,9 +342,11 @@ function KpiMetaEditor({
 export function PlanKpiManager({
   tree,
   reload,
+  readOnly = false,
 }: {
   tree: SpTree;
   reload: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const years = tree.years;
   const defaultYear = years[years.length - 1] ?? new Date().getFullYear();
@@ -429,21 +448,23 @@ export function PlanKpiManager({
                   <SpCodeBadge level="task">{task.displayCode ?? task.taskCode}</SpCodeBadge>
                   <span>{task.taskName}</span>
                 </h3>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  onClick={() => {
-                    setCreateFor(task);
-                    setYear(defaultYear);
-                    setKpiLetterInput(nextLetter(task, kpiByCode));
-                    setKpiName('');
-                    setUnit('');
-                    setDept(task.primaryDept ?? '');
-                  }}
-                >
-                  <Plus className="mr-1 h-3.5 w-3.5" /> KPI 신설
-                </Button>
+                {!readOnly && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => {
+                      setCreateFor(task);
+                      setYear(defaultYear);
+                      setKpiLetterInput(nextLetter(task, kpiByCode));
+                      setKpiName('');
+                      setUnit('');
+                      setDept(task.primaryDept ?? '');
+                    }}
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> KPI 신설
+                  </Button>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -504,6 +525,7 @@ export function PlanKpiManager({
                                   years={years}
                                   departments={departments}
                                   reload={reload}
+                                  readOnly={readOnly}
                                 />
                               </td>
                             </tr>

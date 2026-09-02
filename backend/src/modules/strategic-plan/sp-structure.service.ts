@@ -1495,4 +1495,60 @@ export class SpStructureService {
     });
     return { ok: true as const };
   }
+
+  async fullRevise(
+    input: { scope: 'structure' | 'kpi' | 'fund'; year: number },
+    userId: string,
+  ) {
+    this.assertYear(input.year);
+    if (input.scope === 'structure') {
+      const goals = await this.goalRepo.find({
+        where: { abolishedFrom: IsNull() },
+      });
+      for (const goal of goals) {
+        await this.abolishNode(
+          { kind: 'goal', lineageId: goal.goalId, year: input.year },
+          userId,
+        );
+      }
+    } else if (input.scope === 'kpi') {
+      const kpis = await this.kpiRepo.find({
+        where: { abolishedFrom: IsNull() },
+      });
+      for (const kpi of kpis) {
+        await this.abolishNode(
+          { kind: 'kpi', lineageId: kpi.kpiCode, year: input.year, skipCompact: true },
+          userId,
+        );
+      }
+    } else {
+      const funds = await this.fundRepo.find({
+        where: { abolishedFrom: IsNull() },
+      });
+      for (const fund of funds) {
+        await this.abolishNode(
+          { kind: 'fund', lineageId: String(fund.fundSourceId), year: input.year },
+          userId,
+        );
+      }
+    }
+    const scopeLabel =
+      input.scope === 'structure'
+        ? '전략체계'
+        : input.scope === 'kpi'
+          ? 'KPI'
+          : '재원 유형';
+    await this.recordChange({
+      year: input.year,
+      kind: input.scope === 'structure' ? 'goal' : input.scope === 'kpi' ? 'kpi' : 'fund',
+      lineageId: `full-revision:${input.scope}:${input.year}`,
+      displayCode: '전면개정',
+      changeType: 'revise',
+      summary: `${scopeLabel} 전면개정 (${input.year}학년도부터)`,
+      before: { snapshotYear: input.year - 1, scope: input.scope },
+      after: { blank: true, effectiveFrom: input.year },
+      userId,
+    });
+    return { ok: true as const, year: input.year, snapshotYear: input.year - 1 };
+  }
 }

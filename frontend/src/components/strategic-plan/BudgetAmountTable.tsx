@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { SpCodeBadge } from '@/components/strategic-plan/SpCodeBadge';
 import { Input } from '@/components/ui/input';
 import { fmt1, fmtWon, parseAmount } from '@/lib/strategic-plan/format';
@@ -78,6 +79,7 @@ export function TaskBudgetGrandTotal({
   year,
   budgetTotal,
   settlementTotal,
+  completeControls,
 }: {
   taskCode: string;
   units: Array<{ code: string; name: string }>;
@@ -85,6 +87,7 @@ export function TaskBudgetGrandTotal({
   year: number;
   budgetTotal: number | null;
   settlementTotal: number | null;
+  completeControls?: ReactNode;
 }) {
   const budgets = useStrategicPlanStore((s) => s.budgets);
   const executionRate =
@@ -160,6 +163,7 @@ export function TaskBudgetGrandTotal({
           </tr>
         </tfoot>
       </table>
+      {completeControls}
     </div>
   );
 }

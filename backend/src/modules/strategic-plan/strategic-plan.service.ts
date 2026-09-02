@@ -22,15 +22,19 @@ import {
   IrSpSubtask,
   IrSpTask,
   IrSpTaskBudget,
+  IrSpFullRevision,
   IrSpVision,
+  IrSpWriteLock,
   type SpCompareAlt,
   type SpComparePayload,
 } from '../../entities';
 import {
   CreateDepartmentDto,
+  CreateFullRevisionDto,
   CreateFundSourceDto,
   CreateSubtaskDto,
   ReplaceSubtasksDto,
+  UpsertWriteLockDto,
   UpdateDepartmentDto,
   UpdateFundSourceDto,
   UpdateGoalDto,
@@ -192,6 +196,10 @@ export class StrategicPlanService implements OnModuleInit {
     private readonly departmentRepo: Repository<IrSpDepartment>,
     @InjectRepository(IrSpTaskBudget)
     private readonly budgetRepo: Repository<IrSpTaskBudget>,
+    @InjectRepository(IrSpWriteLock)
+    private readonly writeLockRepo: Repository<IrSpWriteLock>,
+    @InjectRepository(IrSpFullRevision)
+    private readonly revisionRepo: Repository<IrSpFullRevision>,
     private readonly structure: SpStructureService,
     private readonly officeOrg: OfficeOrgService,
   ) {}
@@ -255,30 +263,66 @@ export class StrategicPlanService implements OnModuleInit {
         this.resultRepo.find(),
       ]);
 
+    const [goalVersions, strategyVersions, taskVersions, subtaskVersions, kpiVersions] =
+      latest
+        ? [null, null, null, null, null]
+        : await Promise.all([
+            this.structure.versionsFor('goal'),
+            this.structure.versionsFor('strategy'),
+            this.structure.versionsFor('task'),
+            this.structure.versionsFor('subtask'),
+            this.structure.versionsFor('kpi'),
+          ]);
+
     const liveGoals = goals.filter((g) =>
       latest
         ? g.abolishedFrom == null
-        : this.structure.isActiveAt(g.effectiveFrom, g.abolishedFrom, asOf),
+        : this.structure.activeInYear(
+            goalVersions?.get(g.goalId),
+            asOf,
+            g.effectiveFrom,
+            g.abolishedFrom,
+          ),
     );
     const liveStrategies = strategies.filter((s) =>
       latest
         ? s.abolishedFrom == null
-        : this.structure.isActiveAt(s.effectiveFrom, s.abolishedFrom, asOf),
+        : this.structure.activeInYear(
+            strategyVersions?.get(s.strategyId),
+            asOf,
+            s.effectiveFrom,
+            s.abolishedFrom,
+          ),
     );
     const liveTasks = tasks.filter((t) =>
       latest
         ? t.abolishedFrom == null
-        : this.structure.isActiveAt(t.effectiveFrom, t.abolishedFrom, asOf),
+        : this.structure.activeInYear(
+            taskVersions?.get(t.taskCode),
+            asOf,
+            t.effectiveFrom,
+            t.abolishedFrom,
+          ),
     );
     const liveSubtasks = subtasks.filter((s) =>
       latest
         ? s.abolishedFrom == null
-        : this.structure.isActiveAt(s.effectiveFrom, s.abolishedFrom, asOf),
+        : this.structure.activeInYear(
+            subtaskVersions?.get(s.subtaskCode),
+            asOf,
+            s.effectiveFrom,
+            s.abolishedFrom,
+          ),
     );
     const liveKpis = kpis.filter((k) =>
       latest
         ? k.abolishedFrom == null
-        : this.structure.isActiveAt(k.effectiveFrom, k.abolishedFrom, asOf),
+        : this.structure.activeInYear(
+            kpiVersions?.get(k.kpiCode),
+            asOf,
+            k.effectiveFrom,
+            k.abolishedFrom,
+          ),
     );
 
     const officeNames = await this.officeOrg.resolveDisplayNames(
@@ -601,7 +645,132 @@ export class StrategicPlanService implements OnModuleInit {
 
   /* ── 자체평가 (로그인 사용자 전원) ── */
 
+  async listWriteLocks(year: number) {
+    const rows = await this.writeLockRepo.find({ where: { year } });
+    return rows.map((row) => ({
+      taskCode: row.taskCode,
+      year: row.year,
+      budgetCompleted: row.budgetCompleted,
+      evalCompleted: row.evalCompleted,
+    }));
+  }
+
+  async upsertWriteLock(dto: UpsertWriteLockDto, userId: string) {
+    await this.assertTaskExists(dto.taskCode);
+    const existing = await this.writeLockRepo.findOne({
+      where: { taskCode: dto.taskCode, year: dto.year },
+    });
+    const row = this.writeLockRepo.create({
+      ...existing,
+      taskCode: dto.taskCode,
+      year: dto.year,
+      budgetCompleted: existing?.budgetCompleted ?? false,
+      evalCompleted: existing?.evalCompleted ?? false,
+      updatedBy: userId,
+    });
+    if (dto.kind === 'budget') {
+      row.budgetCompleted = dto.isCompleted;
+    } else {
+      row.evalCompleted = dto.isCompleted;
+    }
+    const saved = await this.writeLockRepo.save(row);
+    return {
+      taskCode: saved.taskCode,
+      year: saved.year,
+      budgetCompleted: saved.budgetCompleted,
+      evalCompleted: saved.evalCompleted,
+    };
+  }
+
+  async listFullRevisions() {
+    const rows = await this.revisionRepo.find({
+      order: { year: 'DESC', revisionId: 'DESC' },
+    });
+    return rows.map((row) => ({
+      revisionId: row.revisionId,
+      year: row.year,
+      snapshotYear: row.snapshotYear,
+      scope: row.scope,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
+    }));
+  }
+
+  async createFullRevision(dto: CreateFullRevisionDto, userId: string) {
+    this.structure.assertYear(dto.year);
+    await this.structure.fullRevise(
+      { scope: dto.scope, year: dto.year },
+      userId,
+    );
+    const row = await this.revisionRepo.save(
+      this.revisionRepo.create({
+        year: dto.year,
+        snapshotYear: dto.year - 1,
+        scope: dto.scope,
+        createdBy: userId,
+      }),
+    );
+    return {
+      revisionId: row.revisionId,
+      year: row.year,
+      snapshotYear: row.snapshotYear,
+      scope: row.scope,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
+    };
+  }
+
+  private async assertUnlocked(
+    taskCode: string,
+    year: number,
+    kind: 'budget' | 'eval',
+  ) {
+    const lock = await this.writeLockRepo.findOne({
+      where: { taskCode, year },
+    });
+    if (!lock) return;
+    if (kind === 'budget' && lock.budgetCompleted) {
+      throw new BadRequestException(
+        '작성완료된 예결산은 수정할 수 없습니다. 수정 버튼을 눌러 주세요.',
+      );
+    }
+    if (kind === 'eval' && lock.evalCompleted) {
+      throw new BadRequestException(
+        '작성완료된 자체평가는 수정할 수 없습니다. 수정 버튼을 눌러 주세요.',
+      );
+    }
+  }
+
   async upsertEvaluation(dto: UpsertEvaluationDto, userId: string) {
+    const onlyIr =
+      dto.irEval !== undefined &&
+      [
+        'deptSummary',
+        'deptAnalysis',
+        'deptGrade',
+        'deptImprovement',
+        'irGrade',
+        'irFeedback',
+        'surveyGrade',
+        'surveyAnalysis',
+        'surveyFeedback',
+        'budgetAdequacy',
+        'budgetAdequacyGrade',
+        'processAdequacy',
+        'processAdequacyGrade',
+        'kpiAdequacy',
+        'kpiAdequacyGrade',
+        'taskActivities',
+        'kpiPoEvals',
+        'kpiPoComments',
+        'surveyItems',
+        'surveyPlans',
+        'surveyItemsNa',
+        'surveyPlansNa',
+      ].every((key) => dto[key as keyof UpsertEvaluationDto] === undefined);
+    if (!onlyIr) {
+      await this.assertUnlocked(dto.taskCode, dto.year, 'eval');
+    }
     await this.assertTaskExists(dto.taskCode);
     this.assertGrade(dto.deptGrade, SP_DEPT_GRADES, '부서 자체점검');
     this.assertGrade(dto.irGrade, SP_IR_GRADES, 'IR센터 평가');
@@ -670,6 +839,7 @@ export class StrategicPlanService implements OnModuleInit {
   /* ── 예산·결산 (로그인 사용자 전원) ── */
 
   async upsertBudget(dto: UpsertBudgetDto, userId: string) {
+    await this.assertUnlocked(dto.taskCode, dto.year, 'budget');
     await this.assertBudgetUnit(dto.taskCode, dto.subtaskCode);
     const fund = await this.fundSourceRepo.findOne({
       where: { fundSourceId: dto.fundSourceId },

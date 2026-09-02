@@ -16,6 +16,37 @@ import {
 } from 'class-validator';
 import { SP_MAX_YEAR, SP_MIN_YEAR } from '../strategic-plan.constants';
 
+export class UpsertWriteLockDto {
+  @IsString()
+  @MaxLength(60)
+  taskCode: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
+
+  @IsString()
+  @Matches(/^(budget|eval)$/)
+  kind: 'budget' | 'eval';
+
+  @IsBoolean()
+  isCompleted: boolean;
+}
+
+export class CreateFullRevisionDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(SP_MIN_YEAR)
+  @Max(SP_MAX_YEAR)
+  year: number;
+
+  @IsString()
+  @Matches(/^(structure|kpi|fund)$/)
+  scope: 'structure' | 'kpi' | 'fund';
+}
+
 export class YearQueryDto {
   @Type(() => Number)
   @IsInt()

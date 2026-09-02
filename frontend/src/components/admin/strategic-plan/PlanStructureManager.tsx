@@ -150,9 +150,11 @@ type DialogState =
 export function PlanStructureManager({
   tree,
   reload,
+  readOnly = false,
 }: {
   tree: SpTree;
   reload: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const years = tree.years;
   const defaultYear = years[years.length - 1] ?? new Date().getFullYear();
@@ -262,14 +264,16 @@ export function PlanStructureManager({
           관리 화면은 항상 최신 체계를 보여 줍니다. 코드 옆 &#39;&gt;&#39;를 눌러
           내용을 고친 뒤 수정을 누르면 저장됩니다.
         </p>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => openCreate({ mode: 'create', kind: 'goal' })}
-        >
-          <Plus className="mr-1 h-4 w-4" /> 발전전략 신설
-        </Button>
+        {!readOnly && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => openCreate({ mode: 'create', kind: 'goal' })}
+          >
+            <Plus className="mr-1 h-4 w-4" /> 발전전략 신설
+          </Button>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -284,6 +288,7 @@ export function PlanStructureManager({
             openKey={openKey}
             setOpenKey={setOpenKey}
             reload={reload}
+            readOnly={readOnly}
             onCreateStrategy={() =>
               openCreate({ mode: 'create', kind: 'strategy', goalId: goal.goalId })
             }
@@ -474,10 +479,12 @@ function GoalEditor({
   goal,
   years,
   reload,
+  readOnly = false,
 }: {
   goal: SpGoal;
   years: number[];
   reload: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [applyYear, setApplyYear] = useState(years[years.length - 1]);
   const [name, setName] = useState(goal.goalName);
@@ -525,15 +532,18 @@ function GoalEditor({
         <Input
           id={`gn-${goal.goalId}`}
           value={name}
+          readOnly={readOnly}
           onChange={(e) => setName(e.target.value)}
           className="h-9"
         />
       </div>
-      <EditorActions
-        disabled={busy}
-        onSave={() => void save()}
-        onAbolish={() => void abolish()}
-      />
+      {!readOnly && (
+        <EditorActions
+          disabled={busy}
+          onSave={() => void save()}
+          onAbolish={() => void abolish()}
+        />
+      )}
     </div>
   );
 }
@@ -542,10 +552,12 @@ function StrategyEditor({
   strategy,
   years,
   reload,
+  readOnly = false,
 }: {
   strategy: SpStrategy;
   years: number[];
   reload: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [applyYear, setApplyYear] = useState(years[years.length - 1]);
   const [name, setName] = useState(strategy.strategyName);
@@ -596,15 +608,18 @@ function StrategyEditor({
         <Input
           id={`sn-${strategy.strategyId}`}
           value={name}
+          readOnly={readOnly}
           onChange={(e) => setName(e.target.value)}
           className="h-9"
         />
       </div>
-      <EditorActions
-        disabled={busy}
-        onSave={() => void save()}
-        onAbolish={() => void abolish()}
-      />
+      {!readOnly && (
+        <EditorActions
+          disabled={busy}
+          onSave={() => void save()}
+          onAbolish={() => void abolish()}
+        />
+      )}
     </div>
   );
 }
@@ -614,11 +629,13 @@ function TaskEditor({
   years,
   departments,
   reload,
+  readOnly = false,
 }: {
   task: SpTask;
   years: number[];
   departments: SpDepartment[];
   reload: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [applyYear, setApplyYear] = useState(years[years.length - 1]);
   const [name, setName] = useState(task.taskName);
@@ -684,6 +701,7 @@ function TaskEditor({
         <Input
           id={`tn-${task.taskCode}`}
           value={name}
+          readOnly={readOnly}
           onChange={(e) => setName(e.target.value)}
           className="h-9"
         />
@@ -695,6 +713,7 @@ function TaskEditor({
         <Input
           id={`th-${task.taskCode}`}
           value={hangul}
+          readOnly={readOnly}
           onChange={(e) => setHangul(e.target.value)}
           className="h-9"
         />
@@ -706,6 +725,7 @@ function TaskEditor({
         <NativeSelect
           id={`td-${task.taskCode}`}
           value={dept}
+          disabled={readOnly}
           onChange={(e) => setDept(e.target.value)}
         >
           <option value="">선택</option>
@@ -719,17 +739,20 @@ function TaskEditor({
       <label className="flex items-center gap-2 text-sm sm:col-span-2">
         <Checkbox
           checked={specialized}
+          disabled={readOnly}
           onCheckedChange={(v) => setSpecialized(v === true)}
         />
         특성화
       </label>
-      <div className="sm:col-span-2">
-        <EditorActions
-          disabled={busy}
-          onSave={() => void save()}
-          onAbolish={() => void abolish()}
-        />
-      </div>
+      {!readOnly && (
+        <div className="sm:col-span-2">
+          <EditorActions
+            disabled={busy}
+            onSave={() => void save()}
+            onAbolish={() => void abolish()}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -739,11 +762,13 @@ function SubtaskEditor({
   sub,
   years,
   reload,
+  readOnly = false,
 }: {
   task: SpTask;
   sub: SpSubtask;
   years: number[];
   reload: () => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [applyYear, setApplyYear] = useState(years[years.length - 1]);
   const [name, setName] = useState(sub.subtaskName);
@@ -807,6 +832,7 @@ function SubtaskEditor({
         <Input
           id={`un-${sub.subtaskCode}`}
           value={name}
+          readOnly={readOnly}
           onChange={(e) => setName(e.target.value)}
           className="h-9"
         />
@@ -818,6 +844,7 @@ function SubtaskEditor({
         <Input
           id={`uh-${sub.subtaskCode}`}
           value={hangul}
+          readOnly={readOnly}
           onChange={(e) => setHangul(e.target.value)}
           className="h-9"
         />
@@ -829,6 +856,7 @@ function SubtaskEditor({
         <Textarea
           id={`up-${sub.subtaskCode}`}
           value={purpose}
+          readOnly={readOnly}
           onChange={(e) => setPurpose(e.target.value)}
         />
       </div>
@@ -839,14 +867,17 @@ function SubtaskEditor({
         <Textarea
           id={`um-${sub.subtaskCode}`}
           value={method}
+          readOnly={readOnly}
           onChange={(e) => setMethod(e.target.value)}
         />
       </div>
-      <EditorActions
-        disabled={busy}
-        onSave={() => void save()}
-        onAbolish={() => void abolish()}
-      />
+      {!readOnly && (
+        <EditorActions
+          disabled={busy}
+          onSave={() => void save()}
+          onAbolish={() => void abolish()}
+        />
+      )}
     </div>
   );
 }
@@ -860,6 +891,7 @@ function GoalBlock({
   openKey,
   setOpenKey,
   reload,
+  readOnly = false,
   onCreateStrategy,
   onCreateTask,
   onCreateSubtask,
@@ -872,6 +904,7 @@ function GoalBlock({
   openKey: string | null;
   setOpenKey: (key: string | null) => void;
   reload: () => Promise<void>;
+  readOnly?: boolean;
   onCreateStrategy: () => void;
   onCreateTask: (strategyId: string) => void;
   onCreateSubtask: (task: SpTask) => void;
@@ -890,17 +923,26 @@ function GoalBlock({
           </ChevronCode>
           <span>{goal.goalName}</span>
         </h3>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 shrink-0"
-          disabled={busy}
-          onClick={onCreateStrategy}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5" /> 전략과제 신설
-        </Button>
+        {!readOnly && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 shrink-0"
+            disabled={busy}
+            onClick={onCreateStrategy}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" /> 전략과제 신설
+          </Button>
+        )}
       </div>
-      {goalOpen && <GoalEditor goal={goal} years={years} reload={reload} />}
+              {goalOpen && (
+                <GoalEditor
+                  goal={goal}
+                  years={years}
+                  reload={reload}
+                  readOnly={readOnly}
+                />
+              )}
       <div className="space-y-3">
         {goal.strategies.map((strategy) => {
           const strategyOpen = openKey === `strategy:${strategy.strategyId}`;
@@ -918,18 +960,25 @@ function GoalBlock({
                   </ChevronCode>
                   <span>{strategy.strategyName}</span>
                 </h4>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 shrink-0"
-                  disabled={busy}
-                  onClick={() => onCreateTask(strategy.strategyId)}
-                >
-                  <Plus className="mr-1 h-3.5 w-3.5" /> 실행과제 신설
-                </Button>
+                {!readOnly && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0"
+                    disabled={busy}
+                    onClick={() => onCreateTask(strategy.strategyId)}
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> 실행과제 신설
+                  </Button>
+                )}
               </div>
               {strategyOpen && (
-                <StrategyEditor strategy={strategy} years={years} reload={reload} />
+                <StrategyEditor
+                  strategy={strategy}
+                  years={years}
+                  reload={reload}
+                  readOnly={readOnly}
+                />
               )}
               <ul className="space-y-2">
                 {strategy.tasks.map((task) => {
@@ -976,15 +1025,17 @@ function GoalBlock({
                             </div>
                           </div>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 shrink-0"
-                          disabled={busy}
-                          onClick={() => onCreateSubtask(task)}
-                        >
-                          <Plus className="mr-1 h-3.5 w-3.5" /> TASK 신설
-                        </Button>
+                        {!readOnly && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 shrink-0"
+                            disabled={busy}
+                            onClick={() => onCreateSubtask(task)}
+                          >
+                            <Plus className="mr-1 h-3.5 w-3.5" /> TASK 신설
+                          </Button>
+                        )}
                       </div>
                       {taskOpen && (
                         <TaskEditor
@@ -992,6 +1043,7 @@ function GoalBlock({
                           years={years}
                           departments={departments}
                           reload={reload}
+                          readOnly={readOnly}
                         />
                       )}
                       <ul className="space-y-2 pl-2">
@@ -1031,6 +1083,7 @@ function GoalBlock({
                                   sub={sub}
                                   years={years}
                                   reload={reload}
+                                  readOnly={readOnly}
                                 />
                               )}
                             </li>

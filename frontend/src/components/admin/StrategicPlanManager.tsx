@@ -3,8 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { fetchSpTree } from '@/lib/strategic-plan/api';
-import type { SpTree } from '@/lib/strategic-plan/types';
+import { notifyAutoSaved } from '@/components/admin/AutoSaveToast';
+import {
+  createSpFullRevision,
+  fetchSpFullRevisions,
+  fetchSpTree,
+} from '@/lib/strategic-plan/api';
+import { apiMessage } from '@/lib/strategic-plan/apiError';
+import type { SpFullRevision, SpFullRevisionScope, SpTree } from '@/lib/strategic-plan/types';
+import { FullRevisionBar } from './strategic-plan/FullRevisionBar';
 import { PlanChangeLogManager } from './strategic-plan/PlanChangeLogManager';
 import { PlanFundSourceManager } from './strategic-plan/PlanFundSourceManager';
 import { PlanKpiManager } from './strategic-plan/PlanKpiManager';
@@ -14,10 +21,15 @@ export function StrategicPlanManager() {
   const [tree, setTree] = useState<SpTree | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState('structure');
+  const [viewYear, setViewYear] = useState<number | null>(null);
+  const [revisions, setRevisions] = useState<SpFullRevision[]>([]);
+  const [busy, setBusy] = useState(false);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (asOfYear?: number | null) => {
+    const year = asOfYear === undefined ? viewYear : asOfYear;
     try {
-      const nextTree = await fetchSpTree();
+      const nextTree = await fetchSpTree(year ?? undefined);
       setTree(nextTree);
       setError(null);
     } catch {
@@ -27,11 +39,18 @@ export function StrategicPlanManager() {
     } finally {
       setLoading(false);
     }
+  }, [viewYear]);
+
+  const loadRevisions = useCallback(() => {
+    fetchSpFullRevisions()
+      .then(setRevisions)
+      .catch(() => setRevisions([]));
   }, []);
 
   useEffect(() => {
     void reload();
-  }, [reload]);
+    loadRevisions();
+  }, [reload, loadRevisions]);
 
   if (loading) {
     return (
@@ -50,6 +69,43 @@ export function StrategicPlanManager() {
     );
   }
 
+  const viewingSnapshot = viewYear != null;
+  const revisionScope: SpFullRevisionScope =
+    tab === 'kpi' ? 'kpi' : tab === 'funds' ? 'fund' : 'structure';
+
+  const handleRevise = async (year: number) => {
+    const ok = window.confirm(
+      `${year}학년도부터 ${
+        revisionScope === 'structure'
+          ? '전략체계'
+          : revisionScope === 'kpi'
+            ? 'KPI'
+            : '재원 유형'
+      }를 전면개정하여 공란으로 만들까요?\n${year - 1}학년도까지는 기존 내용이 유지됩니다.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await createSpFullRevision({ year, scope: revisionScope });
+      loadRevisions();
+      setViewYear(null);
+      await reload(null);
+      notifyAutoSaved('전면개정 되었습니다.');
+    } catch (e) {
+      alert(apiMessage(e, '전면개정에 실패했습니다.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const viewRevision = (snapshotYear: number) => {
+    setViewYear(snapshotYear);
+  };
+
+  const viewCurrent = () => {
+    setViewYear(null);
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -59,28 +115,59 @@ export function StrategicPlanManager() {
           확인합니다.
         </p>
       </div>
-      <Tabs defaultValue="structure">
-        <TabsList className="mb-4 h-auto flex-wrap justify-start">
-          <TabsTrigger value="structure">전략체계</TabsTrigger>
-          <TabsTrigger value="kpi">KPI</TabsTrigger>
-          <TabsTrigger value="changes">변경이력</TabsTrigger>
-          <TabsTrigger value="funds">재원 유형</TabsTrigger>
-        </TabsList>
+      {viewingSnapshot && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+          {viewYear}학년도 전면개정 시점을 조회 중입니다. 이 화면은 조회 전용이며
+          수정할 수 없습니다.
+        </div>
+      )}
+      <Tabs value={tab} onValueChange={setTab}>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+          <TabsList className="h-auto flex-wrap justify-start">
+            <TabsTrigger value="structure">전략체계</TabsTrigger>
+            <TabsTrigger value="kpi">KPI</TabsTrigger>
+            <TabsTrigger value="funds">재원 유형</TabsTrigger>
+            <TabsTrigger value="changes">변경이력</TabsTrigger>
+          </TabsList>
+          {tab !== 'changes' && (
+            <FullRevisionBar
+              scope={revisionScope}
+              years={tree.years}
+              viewYear={viewYear}
+              revisions={revisions}
+              busy={busy}
+              onRevise={handleRevise}
+              onViewRevision={viewRevision}
+              onViewCurrent={viewCurrent}
+            />
+          )}
+        </div>
 
         <TabsContent value="structure">
-          <PlanStructureManager tree={tree} reload={reload} />
+          <PlanStructureManager
+            tree={tree}
+            reload={() => reload()}
+            readOnly={viewingSnapshot}
+          />
         </TabsContent>
 
         <TabsContent value="kpi">
-          <PlanKpiManager tree={tree} reload={reload} />
-        </TabsContent>
-
-        <TabsContent value="changes">
-          <PlanChangeLogManager reload={reload} />
+          <PlanKpiManager
+            tree={tree}
+            reload={() => reload()}
+            readOnly={viewingSnapshot}
+          />
         </TabsContent>
 
         <TabsContent value="funds">
-          <PlanFundSourceManager />
+          <PlanFundSourceManager
+            asOfYear={viewYear}
+            readOnly={viewingSnapshot}
+          />
+        </TabsContent>
+
+        <TabsContent value="changes">
+          <PlanChangeLogManager reload={() => reload()} />
         </TabsContent>
       </Tabs>
     </div>

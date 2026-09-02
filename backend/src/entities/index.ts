@@ -27,5 +27,7 @@ export * from './ir-sp-department.entity';
 export * from './ir-sp-task-budget.entity';
 export * from './ir-sp-item-version.entity';
 export * from './ir-sp-change-log.entity';
+export * from './ir-sp-write-lock.entity';
+export * from './ir-sp-full-revision.entity';
 export * from './ir-org-item-version.entity';
 export * from './ir-org-change-log.entity';

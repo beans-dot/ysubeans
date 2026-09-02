@@ -6,7 +6,12 @@ export type SpNodeKind =
   | 'kpi'
   | 'fund';
 
-export type SpChangeType = 'create' | 'update' | 'abolish' | 'rollback';
+export type SpChangeType =
+  | 'create'
+  | 'update'
+  | 'abolish'
+  | 'rollback'
+  | 'revise';
 
 const TASK_RE = /^([A-Za-z]\d+)(?:-([^-]+))?$/;
 const SUBTASK_RE = /^([A-Za-z]\d+)-([^-]+)-(\d+)$/;
@@ -128,5 +133,6 @@ export function changeTypeLabel(type: SpChangeType) {
   if (type === 'create') return '신설';
   if (type === 'update') return '수정';
   if (type === 'abolish') return '폐지';
+  if (type === 'revise') return '전면개정';
   return '롤백';
 }

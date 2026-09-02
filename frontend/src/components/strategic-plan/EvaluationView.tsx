@@ -38,6 +38,7 @@ import type {
 import { cn } from '@/lib/utils';
 import { useStrategicPlanStore } from '@/store/useStrategicPlanStore';
 import { TaskHeading } from './TaskHeading';
+import { WriteCompleteControls } from './WriteCompleteControls';
 import { EmptyState, EvalSectionTitle, NativeSelect, SectionLabel } from './ui';
 
 function GradeSelect({
@@ -417,13 +418,18 @@ const EvaluationCard = memo(function EvaluationCard({
   const setEvaluationField = useStrategicPlanStore((s) => s.setEvaluationField);
   const setEvaluationData = useStrategicPlanStore((s) => s.setEvaluationData);
   const setIrEvalField = useStrategicPlanStore((s) => s.setIrEvalField);
+  const setWriteLock = useStrategicPlanStore((s) => s.setWriteLock);
+  const completed = useStrategicPlanStore(
+    (s) => s.writeLocks[task.taskCode]?.evalCompleted ?? false,
+  );
   const [open, setOpen] = useState(false);
   const emptyActivitiesRef = useRef<Record<string, SpEvalActivity[]>>({});
   const emptySurveyItemsRef = useRef<SpSurveyItem[] | null>(null);
   const emptySurveyPlansRef = useRef<SpSurveyPlan[] | null>(null);
   const status = evaluationStatus(draft);
   const units = taskBudgetUnits(task);
-  const deptLocked = irMode;
+  const deptLocked = irMode || completed;
+  const unwritten = evaluationUnwrittenCount(draft);
   const ir = draft?.irEval ?? {};
 
   const setText = (field: SpEvaluationTextField, value: string) => {
@@ -489,8 +495,14 @@ const EvaluationCard = memo(function EvaluationCard({
           )}
         />
         <TaskHeading task={task} />
-        <Badge variant="outline" className={cn('shrink-0', SP_STATUS_CLASS[status])}>
-          {evaluationUnwrittenCount(draft)}항목 미작성
+        <Badge
+          variant="outline"
+          className={cn(
+            'shrink-0',
+            completed ? SP_STATUS_CLASS.done : SP_STATUS_CLASS[status],
+          )}
+        >
+          {completed ? '작성완료' : `${unwritten}항목 미작성`}
         </Badge>
       </button>
 
@@ -581,8 +593,8 @@ const EvaluationCard = memo(function EvaluationCard({
                         key={code}
                         kpiCode={code}
                         year={year}
-                        canEditResult={canEditResults && !irMode}
-                        canEditPo={!irMode}
+                        canEditResult={canEditResults && !irMode && !completed}
+                        canEditPo={!irMode && !completed}
                         poEval={draft?.kpiPoEvals?.[code] ?? ''}
                         poComment={draft?.kpiPoComments?.[code] ?? ''}
                         deptGrades={deptGrades}
@@ -1047,6 +1059,14 @@ const EvaluationCard = memo(function EvaluationCard({
               </div>
             </div>
           </div>
+
+          {!irMode && (
+            <WriteCompleteControls
+              completed={completed}
+              onComplete={() => void setWriteLock(task.taskCode, 'eval', true)}
+              onEdit={() => void setWriteLock(task.taskCode, 'eval', false)}
+            />
+          )}
         </CardContent>
       )}
     </Card>
