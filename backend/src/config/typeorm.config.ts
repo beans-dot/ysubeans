@@ -12,4 +12,9 @@ export const buildTypeOrmOptions = (): TypeOrmModuleOptions => ({
   // 개발 편의를 위해 synchronize 사용 (운영 전환 시 migration 권장)
   synchronize: true,
   logging: process.env.DB_LOGGING === 'true',
+  retryAttempts: 2,
+  retryDelay: 1000,
+  extra: {
+    connectionTimeoutMillis: 2000,
+  },
 });
