@@ -10,7 +10,16 @@ export function middleware(request: NextRequest) {
   const isPublic =
     pathname === '/login' ||
     pathname === '/signup' ||
-    pathname === '/find-account';
+    pathname === '/find-account' ||
+    pathname === '/health' ||
+    pathname === '/api/health';
+
+  if (!session && pathname === '/') {
+    const accept = request.headers.get('accept') || '';
+    if (!accept.includes('text/html')) {
+      return NextResponse.json({ status: 'ok' }, { status: 200 });
+    }
+  }
 
   if (!session && !isPublic) {
     const url = request.nextUrl.clone();
@@ -36,6 +45,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|logo.png|api/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|logo.png|health|api/).*)',
   ],
 };
