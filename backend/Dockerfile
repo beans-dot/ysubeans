@@ -9,6 +9,8 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV HOSTNAME=0.0.0.0
 # 프로덕션 구동 + 시딩(ts-node) 모두 지원하기 위해 전체 의존성 설치
 COPY package*.json ./
 RUN npm ci
