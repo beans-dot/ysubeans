@@ -12,6 +12,8 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV HOST=0.0.0.0
+ENV HOSTNAME=0.0.0.0
 
 # Next standalone 출력물 복사
 COPY --from=builder /app/public ./public
