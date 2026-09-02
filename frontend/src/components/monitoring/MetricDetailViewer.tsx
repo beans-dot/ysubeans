@@ -2,7 +2,10 @@
 
 import { MonitoringTrendChart } from './MonitoringTrendChart';
 import { HierarchyCompareChart } from './HierarchyCompareChart';
-import { hasHierarchyData } from '@/lib/monitoring/aggregate';
+import {
+  hasHierarchyData,
+  UNIV_ONLY_HIERARCHY_MESSAGE,
+} from '@/lib/monitoring/aggregate';
 import type { KpiViewModel } from '@/lib/monitoring/fetchMonitoringData';
 import type { OrgStructure, YearValueMap } from '@/lib/monitoring/types';
 import { formatValueWithUnit } from '@/lib/dataFormatters';
@@ -10,7 +13,7 @@ import { formatValueWithUnit } from '@/lib/dataFormatters';
 function NoSubHierarchyMessage() {
   return (
     <div className="rounded-md border border-dashed bg-background px-4 py-10 text-center text-sm text-muted-foreground">
-      하위위계가 없으므로 출력되지 않습니다
+      {UNIV_ONLY_HIERARCHY_MESSAGE}
     </div>
   );
 }

@@ -1,7 +1,10 @@
 'use client';
 
 import { formatValueWithUnit } from '@/lib/dataFormatters';
-import { aggregateDeptMaps } from '@/lib/monitoring/aggregate';
+import {
+  aggregateDeptMaps,
+  UNIV_ONLY_HIERARCHY_MESSAGE,
+} from '@/lib/monitoring/aggregate';
 import {
   assignHighlightBands,
   highlightClassName,
@@ -76,7 +79,7 @@ export function HierarchyAccordionTable({
       </div>
       {!view.hasHierarchy ? (
         <div className="px-4 py-3 text-sm text-muted-foreground">
-          하위위계가 없으므로 출력되지 않습니다
+          {UNIV_ONLY_HIERARCHY_MESSAGE}
         </div>
       ) : (
         <Accordion type="multiple" className="w-full">

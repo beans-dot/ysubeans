@@ -15,7 +15,10 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { formatValueWithUnit } from '@/lib/dataFormatters';
-import { hasHierarchyData } from '@/lib/monitoring/aggregate';
+import {
+  hasHierarchyData,
+  UNIV_ONLY_HIERARCHY_MESSAGE,
+} from '@/lib/monitoring/aggregate';
 import {
   buildCompareRows,
   sortCompareRows,
@@ -172,7 +175,7 @@ export function HierarchyCompareChart({
   if (!hasCompareHierarchy) {
     return (
       <div className="rounded-md border border-dashed bg-background px-4 py-10 text-center text-sm text-muted-foreground">
-        하위위계가 없으므로 출력되지 않습니다
+        {UNIV_ONLY_HIERARCHY_MESSAGE}
       </div>
     );
   }
@@ -279,7 +282,9 @@ export function HierarchyCompareChart({
           계열 또는 학과를 켜면 비교 차트가 표시됩니다.
         </p>
       ) : chartData.length === 0 ? (
-        <p className="text-sm text-muted-foreground">표시할 하위 위계 값이 없습니다.</p>
+        <div className="rounded-md border border-dashed bg-background px-4 py-10 text-center text-sm text-muted-foreground">
+          {UNIV_ONLY_HIERARCHY_MESSAGE}
+        </div>
       ) : (
         <div style={{ height }} className="w-full">
           <ResponsiveContainer width="100%" height="100%">

@@ -1,4 +1,4 @@
-import { aggregateDeptMaps } from './aggregate';
+import { aggregateDeptMaps, isUnivBroadcastYear } from './aggregate';
 import type { KpiViewModel } from './fetchMonitoringData';
 import type { OrgStructure, YearValueMap } from './types';
 
@@ -84,6 +84,9 @@ export function buildCompareRows(
   const method = view.kpi.seriesAggregation;
   const rows: CompareBarRow[] = [];
 
+  // 대학(_ALL_) 값이 전 학과에 복제된 연도는 하위위계 막대를 만들지 않는다.
+  if (isUnivBroadcastYear(view.depts, year, view.univ)) return [];
+
   for (const series of org.series) {
     const deptCodes = series.departments.map((d) => d.deptCode);
     if (opts.showSeries) {
@@ -91,23 +94,28 @@ export function buildCompareRows(
         (d) => view.depts[d.deptCode] ?? {},
       );
       const aggregated = aggregateDeptMaps(deptMaps, [year], method);
-      rows.push({
-        id: `series:${series.id}`,
-        name: series.name,
-        kind: 'series',
-        value: aggregated[year] ?? null,
-        seriesOrder: series.displayOrder,
-        deptOrder: -1,
-        parts: rowParts(view, year, deptCodes, 'series'),
-      });
+      const value = aggregated[year] ?? null;
+      if (value != null) {
+        rows.push({
+          id: `series:${series.id}`,
+          name: series.name,
+          kind: 'series',
+          value,
+          seriesOrder: series.displayOrder,
+          deptOrder: -1,
+          parts: rowParts(view, year, deptCodes, 'series'),
+        });
+      }
     }
     if (opts.showDepts) {
       for (const dept of series.departments) {
+        const value = view.depts[dept.deptCode]?.[year] ?? null;
+        if (value == null) continue;
         rows.push({
           id: `dept:${dept.deptCode}`,
           name: dept.deptName,
           kind: 'dept',
-          value: view.depts[dept.deptCode]?.[year] ?? null,
+          value,
           seriesOrder: series.displayOrder,
           deptOrder: dept.displayOrder,
           parts: rowParts(view, year, deptCodes, 'dept', dept.deptCode),
