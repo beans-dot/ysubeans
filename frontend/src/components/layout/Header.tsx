@@ -105,7 +105,7 @@ export function Header() {
                 variant="ghost"
                 size="sm"
                 onClick={onLogout}
-                className="gap-1 px-2 sm:px-3"
+                className="gap-1 border border-gray-300 bg-transparent px-2 hover:bg-transparent sm:px-3"
               >
                 <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline">로그아웃</span>
