@@ -1,7 +1,13 @@
 'use client';
 
 import { Fragment, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  exportStamp,
+  kpiExportRows,
+  writeXlsxAndLog,
+} from '@/lib/strategic-plan/exportXlsx';
 import { achievementRate, fmt, fmt1 } from '@/lib/strategic-plan/format';
 import { goalAccent } from '@/lib/strategic-plan/goalAccent';
 import type { SpKpi, SpTask } from '@/lib/strategic-plan/types';
@@ -113,6 +119,18 @@ export function KpiView({
     return <EmptyState>조건에 맞는 KPI가 없습니다.</EmptyState>;
   }
 
+  const downloadExcel = () => {
+    const stamp = exportStamp();
+    const filename = `성과지표조회_${year}_${stamp}.xlsx`;
+    writeXlsxAndLog({
+      rows: kpiExportRows(sorted, year),
+      sheetName: '성과지표',
+      filename,
+      source: 'kpi-xlsx',
+      summary: `${year}학년도 성과지표 조회 · ${sorted.length}건`,
+    });
+  };
+
   const colSpan = 7;
 
   const sortHeader = (key: SpKpiSortKey, label: string) => (
@@ -131,8 +149,15 @@ export function KpiView({
   );
 
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full min-w-[720px] text-sm">
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={downloadExcel}>
+          <FileDown className="h-4 w-4" />
+          엑셀 다운로드
+        </Button>
+      </div>
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full min-w-[720px] text-sm">
         <thead className="border-b bg-muted/50">
           <tr>
             {sortHeader('code', '코드')}
@@ -228,7 +253,8 @@ export function KpiView({
             );
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 }

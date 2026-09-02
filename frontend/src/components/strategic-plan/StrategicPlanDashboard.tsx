@@ -181,6 +181,7 @@ export function StrategicPlanDashboard() {
             tasks={tree.tasks}
             fundSources={fundSources}
             readOnly
+            exportable
           />
         )}
 

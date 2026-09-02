@@ -1,11 +1,25 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChevronRight, Copy } from 'lucide-react';
+import { ChevronRight, Copy, FileDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { taskBudgetUnits } from '@/lib/strategic-plan/evalDraft';
+import {
+  exportStamp,
+  settlementExportRows,
+  writeXlsxAndLog,
+} from '@/lib/strategic-plan/exportXlsx';
 import { fmt1, fmtWon, parseAmount } from '@/lib/strategic-plan/format';
 import {
   SP_STATUS_CLASS,
@@ -28,6 +42,8 @@ import {
 import { TaskHeading } from './TaskHeading';
 import { WriteCompleteControls } from './WriteCompleteControls';
 import { EmptyState } from './ui';
+
+type ExportScope = 'selected' | 'all';
 
 function taskTotals(
   budgets: SpBudgetDraft,
@@ -149,10 +165,12 @@ export function BudgetView({
   tasks,
   fundSources,
   readOnly = false,
+  exportable = false,
 }: {
   tasks: SpTask[];
   fundSources: SpFundSource[];
   readOnly?: boolean;
+  exportable?: boolean;
 }) {
   const year = useStrategicPlanStore((s) => s.year);
   const budgets = useStrategicPlanStore((s) => s.budgets);
@@ -161,9 +179,15 @@ export function BudgetView({
   );
   const [copying, setCopying] = useState(false);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [scope, setScope] = useState<ExportScope>('all');
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     setCopyNotice(null);
+    setSelected(new Set());
+    setExportError(null);
   }, [year]);
 
   const copyLastYear = async () => {
@@ -175,6 +199,54 @@ export function BudgetView({
     } finally {
       setCopying(false);
     }
+  };
+
+  const allSelected = tasks.length > 0 && selected.size === tasks.length;
+  const someSelected = selected.size > 0 && !allSelected;
+
+  const toggleTask = (taskCode: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(taskCode);
+      else next.delete(taskCode);
+      return next;
+    });
+  };
+
+  const toggleAll = (checked: boolean) => {
+    setSelected(checked ? new Set(tasks.map((t) => t.taskCode)) : new Set());
+  };
+
+  const openExportDialog = () => {
+    setExportError(null);
+    setScope(selected.size > 0 ? 'selected' : 'all');
+    setDialogOpen(true);
+  };
+
+  const downloadExcel = () => {
+    if (scope === 'selected' && selected.size === 0) {
+      setExportError('출력할 실행과제를 선택해 주세요.');
+      return;
+    }
+    const targets =
+      scope === 'all'
+        ? tasks
+        : tasks.filter((task) => selected.has(task.taskCode));
+    if (targets.length === 0) {
+      setExportError('출력할 실행과제가 없습니다.');
+      return;
+    }
+    const stamp = exportStamp();
+    const suffix = scope === 'all' ? '전체' : `선택${targets.length}건`;
+    const filename = `결산조회_${year}_${suffix}_${stamp}.xlsx`;
+    writeXlsxAndLog({
+      rows: settlementExportRows(targets, fundSources, budgets, year),
+      sheetName: '결산조회',
+      filename,
+      source: 'settlement-xlsx',
+      summary: `${year}학년도 결산 조회 · ${suffix}`,
+    });
+    setDialogOpen(false);
   };
 
   if (fundSources.length === 0) {
@@ -321,21 +393,151 @@ export function BudgetView({
         </CardContent>
       </Card>
 
+      {exportable && tasks.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+              onCheckedChange={(value) => toggleAll(value === true)}
+              aria-label="실행과제 전체 선택"
+            />
+            전체 선택
+            <span className="text-muted-foreground">
+              ({selected.size}/{tasks.length})
+            </span>
+          </label>
+          <Button size="sm" onClick={openExportDialog}>
+            <FileDown className="h-4 w-4" />
+            엑셀 다운로드
+          </Button>
+        </div>
+      )}
+
       {tasks.length === 0 ? (
         <EmptyState>조건에 맞는 실행과제가 없습니다.</EmptyState>
       ) : (
         <div className="space-y-3">
-          {tasks.map((task) => (
-            <BudgetTaskCard
-              key={task.taskCode}
-              task={task}
-              fundSources={fundSources}
-              budgets={budgets}
-              year={year}
-              readOnly={readOnly}
-            />
-          ))}
+          {tasks.map((task) =>
+            exportable ? (
+              <div key={task.taskCode} className="flex items-start gap-3">
+                <div className="pt-5">
+                  <Checkbox
+                    checked={selected.has(task.taskCode)}
+                    onCheckedChange={(value) =>
+                      toggleTask(task.taskCode, value === true)
+                    }
+                    aria-label={`${task.taskCode} ${task.taskName} 선택`}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <BudgetTaskCard
+                    task={task}
+                    fundSources={fundSources}
+                    budgets={budgets}
+                    year={year}
+                    readOnly={readOnly}
+                  />
+                </div>
+              </div>
+            ) : (
+              <BudgetTaskCard
+                key={task.taskCode}
+                task={task}
+                fundSources={fundSources}
+                budgets={budgets}
+                year={year}
+                readOnly={readOnly}
+              />
+            ),
+          )}
         </div>
+      )}
+
+      {exportable && (
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>엑셀 다운로드</DialogTitle>
+              <DialogDescription>
+                선택한 실행과제 또는 전체를 한 시트로 받습니다. 실행과제별
+                소계가 포함됩니다.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-2">
+              <label
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 rounded-md border p-3',
+                  scope === 'selected' && 'border-primary bg-primary/5',
+                  selected.size === 0 && 'cursor-not-allowed opacity-50',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="settlement-xlsx-scope"
+                  className="mt-1"
+                  checked={scope === 'selected'}
+                  disabled={selected.size === 0}
+                  onChange={() => setScope('selected')}
+                />
+                <span>
+                  <span className="font-bold">선택한 실행과제만</span>
+                  <span className="mt-0.5 block text-sm text-muted-foreground">
+                    {selected.size > 0
+                      ? `${selected.size}건`
+                      : '실행과제를 먼저 선택해 주세요.'}
+                  </span>
+                </span>
+              </label>
+
+              <label
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 rounded-md border p-3',
+                  scope === 'all' && 'border-primary bg-primary/5',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="settlement-xlsx-scope"
+                  className="mt-1"
+                  checked={scope === 'all'}
+                  onChange={() => setScope('all')}
+                />
+                <span>
+                  <span className="font-bold">전체 출력</span>
+                  <span className="mt-0.5 block text-sm text-muted-foreground">
+                    실행과제 {tasks.length}건
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {exportError && (
+              <p className="text-sm text-destructive">{exportError}</p>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                disabled={scope === 'selected' && selected.size === 0}
+                onClick={downloadExcel}
+              >
+                <FileDown className="h-4 w-4" />
+                다운로드
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
