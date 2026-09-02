@@ -481,7 +481,11 @@ export function buildKpiViews(
       label: bundle.studentMeta.label,
       unit: bundle.studentMeta.unit,
       found: bundle.studentMeta.found,
-      hasHierarchy: hasHierarchyData(studentValues.depts),
+      hasHierarchy: hasHierarchyData(
+        studentValues.depts,
+        selectedYear,
+        studentValues.univ,
+      ),
       selectedYear,
       years,
       univ: studentValues.univ,
@@ -514,7 +518,11 @@ export function buildKpiViews(
       label: entry.label,
       unit: entry.unit,
       found: entry.found,
-      hasHierarchy: hasHierarchyData(entry.values.depts),
+      hasHierarchy: hasHierarchyData(
+        entry.values.depts,
+        selectedYear,
+        entry.values.univ,
+      ),
       selectedYear,
       years,
       univ: entry.values.univ,
@@ -532,8 +540,16 @@ export function buildKpiViews(
       unit: entry.unit,
       found: entry.found,
       hasHierarchy:
-        hasHierarchyData(entry.income.depts) ||
-        hasHierarchyData(entry.expense.depts),
+        hasHierarchyData(
+          entry.income.depts,
+          selectedYear,
+          entry.income.univ,
+        ) ||
+        hasHierarchyData(
+          entry.expense.depts,
+          selectedYear,
+          entry.expense.univ,
+        ),
       selectedYear,
       years,
       univ: entry.income.univ,
@@ -628,7 +644,7 @@ export function buildKpiViews(
       label: entry.label,
       unit: entry.unit,
       found: entry.found,
-      hasHierarchy: hasHierarchyData(values.depts),
+      hasHierarchy: hasHierarchyData(values.depts, selectedYear, values.univ),
       selectedYear,
       years,
       univ: values.univ,

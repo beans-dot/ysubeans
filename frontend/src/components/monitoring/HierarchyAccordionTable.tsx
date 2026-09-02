@@ -76,7 +76,7 @@ export function HierarchyAccordionTable({
       </div>
       {!view.hasHierarchy ? (
         <div className="px-4 py-3 text-sm text-muted-foreground">
-          이 지표는 계열·학과 단위 데이터가 없어 하위 조회를 할 수 없습니다.
+          하위위계가 없으므로 출력되지 않습니다
         </div>
       ) : (
         <Accordion type="multiple" className="w-full">

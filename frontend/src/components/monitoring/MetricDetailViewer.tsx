@@ -2,9 +2,18 @@
 
 import { MonitoringTrendChart } from './MonitoringTrendChart';
 import { HierarchyCompareChart } from './HierarchyCompareChart';
+import { hasHierarchyData } from '@/lib/monitoring/aggregate';
 import type { KpiViewModel } from '@/lib/monitoring/fetchMonitoringData';
 import type { OrgStructure, YearValueMap } from '@/lib/monitoring/types';
 import { formatValueWithUnit } from '@/lib/dataFormatters';
+
+function NoSubHierarchyMessage() {
+  return (
+    <div className="rounded-md border border-dashed bg-background px-4 py-10 text-center text-sm text-muted-foreground">
+      하위위계가 없으므로 출력되지 않습니다
+    </div>
+  );
+}
 
 export function MetricDetailViewer({
   view,
@@ -95,58 +104,72 @@ export function MetricDetailViewer({
             ? '3. 하위위계별 비교'
             : '2. 하위위계별 비교'}
         </h4>
-        <p className="text-sm text-muted-foreground">
-          {view.selectedYear}년 기준으로 계열·학과를 켜면 해당 위계가 모두 가로
-          막대로 표시됩니다. 같은 위계에서 상위 10%는 밝은 파랑, 하위 10%는 밝은
-          빨강입니다. 모든 값이 같거나, 동점 때문에 10%를 넘기면 해당 구간은
-          색을 칠하지 않습니다. 달성값순, 이름순, 학과나열순(편제 순서)과
-          오름/내림차순을 바꿀 수 있습니다.
-          {(view.stackBreakdown ?? view.studentBreakdown) &&
-          (view.stackBreakdown ?? view.studentBreakdown)!.keys.length >= 2
-            ? ' 구성 항목을 2개 이상 켜면 총계 기준 누적 가로 막대로 구분하고, 항목별 값과 비중은 막대에 마우스를 올리면 볼 수 있습니다.'
-            : view.stackBreakdown || view.studentBreakdown
-              ? ' 비교 막대도 켠 구성 항목의 합(총계)입니다.'
-              : null}
-        </p>
+        {view.hasHierarchy ? (
+          <p className="text-sm text-muted-foreground">
+            {view.selectedYear}년 기준으로 계열·학과를 켜면 해당 위계가 모두 가로
+            막대로 표시됩니다. 같은 위계에서 상위 10%는 밝은 파랑, 하위 10%는 밝은
+            빨강입니다. 모든 값이 같거나, 동점 때문에 10%를 넘기면 해당 구간은
+            색을 칠하지 않습니다. 달성값순, 이름순, 학과나열순(편제 순서)과
+            오름/내림차순을 바꿀 수 있습니다.
+            {(view.stackBreakdown ?? view.studentBreakdown) &&
+            (view.stackBreakdown ?? view.studentBreakdown)!.keys.length >= 2
+              ? ' 구성 항목을 2개 이상 켜면 총계 기준 누적 가로 막대로 구분하고, 항목별 값과 비중은 막대에 마우스를 올리면 볼 수 있습니다.'
+              : view.stackBreakdown || view.studentBreakdown
+                ? ' 비교 막대도 켠 구성 항목의 합(총계)입니다.'
+                : null}
+          </p>
+        ) : null}
         {view.accounting ? (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <h5 className="text-sm font-bold">수입</h5>
-              <HierarchyCompareChart
-                key={`${view.id}-income-${view.selectedYear}`}
-                view={{
-                  ...view,
-                  label: `${view.label} · 수입`,
-                  univ: view.accounting.income,
-                  depts: view.accounting.incomeDepts,
-                  yoy: view.accounting.incomeYoy,
-                  stackBreakdown: undefined,
-                  studentBreakdown: undefined,
-                }}
-                org={org}
-              />
+          view.hasHierarchy ? (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <h5 className="text-sm font-bold">수입</h5>
+                <HierarchyCompareChart
+                  key={`${view.id}-income-${view.selectedYear}`}
+                  view={{
+                    ...view,
+                    label: `${view.label} · 수입`,
+                    univ: view.accounting.income,
+                    depts: view.accounting.incomeDepts,
+                    yoy: view.accounting.incomeYoy,
+                    stackBreakdown: undefined,
+                    studentBreakdown: undefined,
+                    hasHierarchy: hasHierarchyData(
+                      view.accounting.incomeDepts,
+                      view.selectedYear,
+                      view.accounting.income,
+                    ),
+                  }}
+                  org={org}
+                />
+              </div>
+              <div className="space-y-2">
+                <h5 className="text-sm font-bold">지출</h5>
+                <HierarchyCompareChart
+                  key={`${view.id}-expense-${view.selectedYear}`}
+                  view={{
+                    ...view,
+                    label: `${view.label} · 지출`,
+                    univ: view.accounting.expense,
+                    depts: view.accounting.expenseDepts,
+                    yoy: view.accounting.expenseYoy,
+                    stackBreakdown: undefined,
+                    studentBreakdown: undefined,
+                    hasHierarchy: hasHierarchyData(
+                      view.accounting.expenseDepts,
+                      view.selectedYear,
+                      view.accounting.expense,
+                    ),
+                  }}
+                  org={org}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <h5 className="text-sm font-bold">지출</h5>
-              <HierarchyCompareChart
-                key={`${view.id}-expense-${view.selectedYear}`}
-                view={{
-                  ...view,
-                  label: `${view.label} · 지출`,
-                  univ: view.accounting.expense,
-                  depts: view.accounting.expenseDepts,
-                  yoy: view.accounting.expenseYoy,
-                  stackBreakdown: undefined,
-                  studentBreakdown: undefined,
-                }}
-                org={org}
-              />
-            </div>
-          </div>
+          ) : (
+            <NoSubHierarchyMessage />
+          )
         ) : !view.hasHierarchy ? (
-          <div className="rounded-md border border-dashed bg-background px-4 py-10 text-center text-sm text-muted-foreground">
-            하위위계가 없습니다.
-          </div>
+          <NoSubHierarchyMessage />
         ) : (
           <HierarchyCompareChart
             key={`${view.id}-${view.selectedYear}-${view.stackBreakdown?.keys.join('-') ?? view.studentBreakdown?.keys.join('-') ?? 'plain'}`}

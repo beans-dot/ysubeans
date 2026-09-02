@@ -22,10 +22,37 @@ export function hasAnyValue(map: YearValueMap): boolean {
   return Object.values(map).some((v) => v != null);
 }
 
+/**
+ * 계열·학과 비교에 쓸 실제 하위위계 데이터가 있는지.
+ * 피벗은 대학(_ALL_)만 있는 지표 값을 모든 학과 타깃에 복제하므로,
+ * 선택 연도의 전 학과 값이 대학값과 같으면 하위위계가 없는 것으로 본다.
+ */
 export function hasHierarchyData(
   deptMaps: Record<string, YearValueMap>,
+  year?: number,
+  univ?: YearValueMap,
 ): boolean {
-  return Object.values(deptMaps).some(hasAnyValue);
+  const maps = Object.values(deptMaps);
+  if (maps.length === 0) return false;
+
+  const at = (map: YearValueMap): number | null =>
+    year == null
+      ? (Object.values(map).find((v): v is number => v != null) ?? null)
+      : readYearValue(map, year);
+
+  const deptVals = maps.map(at);
+  const present = deptVals.filter((v): v is number => v != null);
+  if (present.length === 0) return false;
+
+  const univVal = univ ? at(univ) : null;
+  if (
+    univVal != null &&
+    present.length === deptVals.length &&
+    present.every((v) => v === univVal)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export function readYearValue(

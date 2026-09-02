@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { formatValueWithUnit } from '@/lib/dataFormatters';
+import { hasHierarchyData } from '@/lib/monitoring/aggregate';
 import {
   buildCompareRows,
   sortCompareRows,
@@ -162,10 +163,16 @@ export function HierarchyCompareChart({
 
   const height = Math.max(280, chartData.length * ROW_HEIGHT);
 
-  if (!view.hasHierarchy) {
+  const hasCompareHierarchy = hasHierarchyData(
+    view.depts,
+    view.selectedYear,
+    view.univ,
+  );
+
+  if (!hasCompareHierarchy) {
     return (
       <div className="rounded-md border border-dashed bg-background px-4 py-10 text-center text-sm text-muted-foreground">
-        하위위계가 없습니다.
+        하위위계가 없으므로 출력되지 않습니다
       </div>
     );
   }
