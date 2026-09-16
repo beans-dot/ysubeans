@@ -16,5 +16,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
-EXPOSE 4000
+ENV PORT=3000
+ENV HOST=0.0.0.0
+ENV HOSTNAME=0.0.0.0
+EXPOSE 3000
 CMD ["node", "dist/main.js"]
