@@ -5,6 +5,7 @@ import { buildTypeOrmOptions } from './config/typeorm.config';
 import { AlimiModule } from './modules/alimi/alimi.module';
 import { AnnualEventsModule } from './modules/annual-events/annual-events.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { HealthModule } from './modules/health/health.module';
 import { InternalOrgModule } from './modules/internal-org/internal-org.module';
 import { MailModule } from './modules/mail/mail.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
@@ -20,6 +21,7 @@ import { UsersModule } from './modules/users/users.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    HealthModule,
     TypeOrmModule.forRoot(buildTypeOrmOptions()),
     AuthModule,
     UsersModule,
