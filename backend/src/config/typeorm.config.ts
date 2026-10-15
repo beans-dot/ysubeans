@@ -12,4 +12,10 @@ export const buildTypeOrmOptions = (): TypeOrmModuleOptions => ({
   // 개발 편의를 위해 synchronize 사용 (운영 전환 시 migration 권장)
   synchronize: true,
   logging: process.env.DB_LOGGING === 'true',
+  // Isolated deploy has no Postgres — fail fast instead of hanging the process.
+  retryAttempts: 1,
+  retryDelay: 1000,
+  extra: {
+    connectionTimeoutMillis: 3000,
+  },
 });
