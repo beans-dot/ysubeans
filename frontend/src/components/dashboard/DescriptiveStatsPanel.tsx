@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { PivotRow } from '@/lib/api';
+import { buildSeriesStyleMap } from '@/lib/chartStyleUtils';
 import {
   descriptiveStats,
   formatDescriptiveNumber,
@@ -15,6 +16,13 @@ import { logDataExport } from '@/lib/exportLog';
 import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import {
+  CorrDragGhost,
+  CorrelationPanel,
+  useCorrelationDrag,
+  type CorrLegendItem,
+} from './CorrelationPanel';
 
 const STAT_HEADERS = [
   '평균(Mean)',
@@ -32,6 +40,10 @@ function seriesName(row: PivotRow): string {
   const unit = row.metricUnit?.trim();
   const name = `${row.targetLabel} · ${row.metricName}`;
   return unit ? `${name} (${unit})` : name;
+}
+
+function seriesKey(row: PivotRow): string {
+  return `${row.targetKey}__${row.metricId}`;
 }
 
 function statCells(stats: DescriptiveStats): string[] {
@@ -57,15 +69,46 @@ export function DescriptiveStatsPanel() {
 
   const rows = useMemo(() => {
     if (!pivot) return [];
-    return pivot.rows.map((row) => ({
-      key: `${row.targetKey}-${row.metricId}`,
-      name: seriesName(row),
-      isYeonsung: row.isYeonsung,
-      cells: statCells(
-        descriptiveStats(pivot.years.map((year) => row.values[year])),
-      ),
-    }));
+    const styled = buildSeriesStyleMap(
+      pivot.rows.map((row) => ({
+        key: seriesKey(row),
+        isYeonsung: row.isYeonsung,
+        metricId: row.metricId,
+      })),
+    ).styles;
+    return pivot.rows.map((row) => {
+      const key = seriesKey(row);
+      return {
+        key,
+        name: seriesName(row),
+        isYeonsung: row.isYeonsung,
+        color: styled[key]?.stroke,
+        cells: statCells(
+          descriptiveStats(pivot.years.map((year) => row.values[year])),
+        ),
+      };
+    });
   }, [pivot]);
+
+  const corrItems = useMemo<CorrLegendItem[]>(
+    () => rows.map((row) => ({ key: row.key, label: row.name, color: row.color })),
+    [rows],
+  );
+
+  const corrData = useMemo(() => {
+    if (!pivot) return [];
+    return pivot.years.map((year) => {
+      const point: Record<string, number | string | null> = { year };
+      for (const row of pivot.rows) {
+        point[seriesKey(row)] = row.values[year] ?? null;
+      }
+      return point;
+    });
+  }, [pivot]);
+
+  const rowSignature = rows.map((row) => row.key).join('|');
+  const { slots, ghost, hoverSlot, clearSlot, beginPointer } =
+    useCorrelationDrag(rowSignature);
 
   const handleExcel = () => {
     if (!tableRef.current) return;
@@ -138,8 +181,21 @@ export function DescriptiveStatsPanel() {
                   <tr key={row.key}>
                     <td className="whitespace-nowrap border px-3 py-2">
                       <span
-                        className={
-                          row.isYeonsung ? 'font-bold text-primary' : ''
+                        className={cn(
+                          'inline-block cursor-grab active:cursor-grabbing',
+                          row.isYeonsung && 'font-bold text-primary',
+                        )}
+                        title="드래그하면 아래 상관계수 분석에 넣습니다"
+                        onPointerDown={(e) =>
+                          beginPointer(
+                            {
+                              key: row.key,
+                              label: row.name,
+                              color: row.color,
+                            },
+                            null,
+                            e,
+                          )
                         }
                       >
                         {row.name}
@@ -159,6 +215,19 @@ export function DescriptiveStatsPanel() {
             </table>
           </div>
         )}
+        {hasData && (
+          <CorrelationPanel
+            slots={slots}
+            items={corrItems}
+            data={corrData}
+            hoverSlot={hoverSlot}
+            onClear={clearSlot}
+            onChipPointerDown={(index, item, e) =>
+              beginPointer(item, index, e)
+            }
+          />
+        )}
+        {ghost ? <CorrDragGhost drag={ghost} /> : null}
       </CardContent>
     </Card>
   );
