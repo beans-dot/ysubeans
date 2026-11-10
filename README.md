@@ -37,9 +37,30 @@ IR_dashboard/
 - 프론트엔드 트리는 모든 노드에 체크박스 + **Cascade Select All**(부모 체크 시 하위 전체 연쇄 선택/해제, 부분 선택은 indeterminate)을 지원합니다.
 - **자체 지표 상호 배타**: `selectedTargets`에 타 대학이 1개라도 있으면 Dual-Listbox의 `[자체]`(INTERNAL) 지표는 `disabled` 처리됩니다.
 
+## 다른 PC에서 열기
+
+이 폴더를 받은 PC에는 PostgreSQL 16과 Node.js가 필요합니다. 데이터베이스는 `db\ir_dashboard.sql`에 들어 있습니다.
+
+1. PostgreSQL 16을 설치하고 서비스를 실행합니다.
+2. 이 폴더에서 PowerShell을 엽니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\restore-db.ps1
+```
+
+설치할 때 정한 `postgres` 슈퍼유저 비밀번호를 한 번 입력합니다. 스크립트가 `.env`의 앱 계정과 `ir_dashboard` 데이터베이스를 만든 뒤, SQL을 그 계정으로 넣습니다. 테이블 주인은 그 계정이 됩니다.
+
+3. 이어서 실행합니다.
+
+```bash
+npm run dev
+```
+
+화면은 http://localhost:3000 입니다. `npm run dev`가 의존성을 못 찾으면 `npm run install:all`을 먼저 실행합니다. `backend\.env`가 루트 `.env`보다 우선합니다. `npm run seed`는 빈 데이터베이스를 API로 다시 채울 때 쓰는 명령이라, 이 SQL을 복원한 뒤에는 실행하지 않습니다.
+
 ## 로컬 실행
 
-Node.js와 이 PC에 설치된 PostgreSQL을 사용합니다. 스키마가 `jsonb`, advisory lock을 쓰므로 데이터베이스 엔진은 PostgreSQL입니다. 저장소 루트의 `.env`는 `localhost:5432`를 가리키고, 프론트엔드는 `http://localhost:4000/api`로 프록시합니다.
+아래는 SQL 덤프 없이 빈 데이터베이스로 처음부터 만들 때의 절차입니다. Node.js와 이 PC에 설치된 PostgreSQL을 사용합니다. 스키마가 `jsonb`, advisory lock을 쓰므로 데이터베이스 엔진은 PostgreSQL입니다. 저장소 루트의 `.env`는 `localhost:5432`를 가리키고, 프론트엔드는 `http://localhost:4000/api`로 프록시합니다.
 
 ### 1) 사전 준비
 
