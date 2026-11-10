@@ -1,0 +1,634 @@
+[
+  {
+    "code": "C33a",
+    "name": "공유협업 추진이행지수",
+    "target": 20,
+    "actual": 23,
+    "rate": 115,
+    "flag": "달성"
+  },
+  {
+    "code": "C31a",
+    "name": "산학 공유·협업 확산 지수",
+    "target": 25,
+    "actual": 205,
+    "rate": 820,
+    "flag": "달성"
+  },
+  {
+    "code": "C32a",
+    "name": "지역사회 참여 프로젝트 운영수",
+    "target": 80,
+    "actual": 70,
+    "rate": 87.5,
+    "flag": "미달성"
+  },
+  {
+    "code": "E12a",
+    "name": "학사구조 혁신 만족도",
+    "target": 73.4,
+    "actual": 78.23,
+    "rate": 106.5,
+    "flag": "달성"
+  },
+  {
+    "code": "E13a",
+    "name": "대학핵심성과지표 향상률",
+    "target": 3.18,
+    "actual": -2.2,
+    "rate": -69.18,
+    "flag": "미달성"
+  },
+  {
+    "code": "E11a",
+    "name": "구성원 참여·소통 체계 만족도",
+    "target": 72,
+    "actual": 73.4,
+    "rate": 101.94,
+    "flag": "달성"
+  },
+  {
+    "code": "E31a",
+    "name": "대학의 사회적 기여 인식 지수",
+    "target": 85.5,
+    "actual": 76.98,
+    "rate": 90.03,
+    "flag": "미달성"
+  },
+  {
+    "code": "E32a",
+    "name": "교육비 환원율",
+    "target": 118.2,
+    "actual": 199.1,
+    "rate": 168.4,
+    "flag": "달성"
+  },
+  {
+    "code": "E32b",
+    "name": "ESG 실천지수",
+    "target": 20,
+    "actual": 31,
+    "rate": 155,
+    "flag": "달성"
+  },
+  {
+    "code": "E33a",
+    "name": "법인전입금 비율",
+    "target": 26.5,
+    "actual": 32.22,
+    "rate": 121.58,
+    "flag": "달성"
+  },
+  {
+    "code": "E41a",
+    "name": "전임교원 확보율",
+    "target": 54,
+    "actual": 57.46,
+    "rate": 106.4,
+    "flag": "달성"
+  },
+  {
+    "code": "E41b",
+    "name": "전체교원 확보율",
+    "target": 100,
+    "actual": 107.09,
+    "rate": 107.1,
+    "flag": "달성"
+  },
+  {
+    "code": "E42a",
+    "name": "연간 교직원 연수 시간",
+    "target": 33,
+    "actual": 43.07,
+    "rate": 130.5,
+    "flag": "달성"
+  },
+  {
+    "code": "E42b",
+    "name": "전임교수 1인당 연구실적",
+    "target": 0.69,
+    "actual": 0.67,
+    "rate": 97.1,
+    "flag": "미달성"
+  },
+  {
+    "code": "E43a",
+    "name": "교원 만족도지수",
+    "target": 76,
+    "actual": 85.8,
+    "rate": 112.89,
+    "flag": "달성"
+  },
+  {
+    "code": "E43b",
+    "name": "직원 만족도지수",
+    "target": 73,
+    "actual": 76.3,
+    "rate": 104.52,
+    "flag": "달성"
+  },
+  {
+    "code": "A14a",
+    "name": "대외경진대회/공모전 수상자 비율",
+    "target": 64,
+    "actual": 54.8,
+    "rate": 85.62,
+    "flag": "미달성"
+  },
+  {
+    "code": "A14b",
+    "name": "전공자격증 취득자 비율",
+    "target": 19,
+    "actual": 13.15,
+    "rate": 69.21,
+    "flag": "미달성"
+  },
+  {
+    "code": "A14c",
+    "name": "현장학습 만족도",
+    "target": 71.5,
+    "actual": 77.6,
+    "rate": 108.5,
+    "flag": "달성"
+  },
+  {
+    "code": "A15a",
+    "name": "소단위전공 참여자 만족도",
+    "target": 91.5,
+    "actual": 92.51,
+    "rate": 101.1,
+    "flag": "달성"
+  },
+  {
+    "code": "A15b",
+    "name": "전공 다양화 수요자 만족도",
+    "target": 4.45,
+    "actual": 4.03,
+    "rate": 90.56,
+    "flag": "미달성"
+  },
+  {
+    "code": "A11a",
+    "name": "전공교육 재학생 만족도",
+    "target": 83,
+    "actual": 76.1,
+    "rate": 91.68,
+    "flag": "미달성"
+  },
+  {
+    "code": "A11b",
+    "name": "졸업생·재학생 역량 산업체 만족도",
+    "target": 86.5,
+    "actual": 84.7,
+    "rate": 97.91,
+    "flag": "미달성"
+  },
+  {
+    "code": "A11c",
+    "name": "전공 교육과정 자체평가 평점",
+    "target": 4.45,
+    "actual": 4.37,
+    "rate": 98.2,
+    "flag": "미달성"
+  },
+  {
+    "code": "A12a",
+    "name": "핵심역량 최소기대수준 도달률",
+    "target": 75.2,
+    "actual": 75.4,
+    "rate": 100.3,
+    "flag": "달성"
+  },
+  {
+    "code": "A12b",
+    "name": "교양교육 재학생 만족도",
+    "target": 76,
+    "actual": 73.1,
+    "rate": 96.2,
+    "flag": "미달성"
+  },
+  {
+    "code": "A13a",
+    "name": "창의융합형 서비스분야 Gem 인증률",
+    "target": 86.7,
+    "actual": 88.7,
+    "rate": 102.3,
+    "flag": "달성"
+  },
+  {
+    "code": "A22a",
+    "name": "학사관리 재학생 만족도",
+    "target": 73.7,
+    "actual": 76.7,
+    "rate": 104.07,
+    "flag": "달성"
+  },
+  {
+    "code": "A22b",
+    "name": "전공교과목 강좌당 학생수",
+    "target": 28.3,
+    "actual": 24.1,
+    "rate": 117.43,
+    "flag": "달성"
+  },
+  {
+    "code": "A21a",
+    "name": "YSU 핵심역량성취도",
+    "target": 81,
+    "actual": 85.16,
+    "rate": 105.14,
+    "flag": "달성"
+  },
+  {
+    "code": "A21b",
+    "name": "전공직무영역 Gem 인증률",
+    "target": 49,
+    "actual": 79.2,
+    "rate": 161.63,
+    "flag": "달성"
+  },
+  {
+    "code": "A23a",
+    "name": "강의평가 평균",
+    "target": 79,
+    "actual": 88.9,
+    "rate": 112.4,
+    "flag": "달성"
+  },
+  {
+    "code": "A24a",
+    "name": "기초학습능력인증률",
+    "target": 90,
+    "actual": 92.7,
+    "rate": 103,
+    "flag": "달성"
+  },
+  {
+    "code": "A24b",
+    "name": "데이터기반 학습성과 분석 건",
+    "target": 1,
+    "actual": 1,
+    "rate": 100,
+    "flag": "달성"
+  },
+  {
+    "code": "A31a",
+    "name": "재학생충원율",
+    "target": 91.8,
+    "actual": 90.87,
+    "rate": 98.99,
+    "flag": "미달성"
+  },
+  {
+    "code": "A32a",
+    "name": "학생 1인당 실험실습비",
+    "target": 172000,
+    "actual": 249884,
+    "rate": 145.28,
+    "flag": "달성"
+  },
+  {
+    "code": "A32b",
+    "name": "학생 실험실습기자재 만족도",
+    "target": 73,
+    "actual": 78.24,
+    "rate": 107.18,
+    "flag": "달성"
+  },
+  {
+    "code": "D11a",
+    "name": "전공심화과정 재학생 만족도",
+    "target": 73.5,
+    "actual": 80.87,
+    "rate": 110.03,
+    "flag": "달성"
+  },
+  {
+    "code": "D12a",
+    "name": "전문기술석사과정 재학생 만족도",
+    "target": 74.42,
+    "actual": 77.44,
+    "rate": 104.06,
+    "flag": "달성"
+  },
+  {
+    "code": "D13a",
+    "name": "평생교육 강좌 참여자 수",
+    "target": 997,
+    "actual": 1281,
+    "rate": 128.5,
+    "flag": "달성"
+  },
+  {
+    "code": "D13b",
+    "name": "성인학습자 평생직업교육 단기과정 참여자 수",
+    "target": 164,
+    "actual": 923,
+    "rate": 562.8,
+    "flag": "달성"
+  },
+  {
+    "code": "D31a",
+    "name": "온라인 콘텐츠 제작 건 수",
+    "target": 430,
+    "actual": 379,
+    "rate": 88,
+    "flag": "미달성"
+  },
+  {
+    "code": "D31b",
+    "name": "보조학습 콘텐츠 활용 건 수",
+    "target": 300,
+    "actual": 2311,
+    "rate": 770,
+    "flag": "달성"
+  },
+  {
+    "code": "D34a",
+    "name": "교사(校舍)시설 확보율",
+    "target": 100,
+    "actual": 172.6,
+    "rate": 172.6,
+    "flag": "달성"
+  },
+  {
+    "code": "D32a",
+    "name": "학생 1인당 자료구입비",
+    "target": 17000,
+    "actual": 25797,
+    "rate": 152,
+    "flag": "달성"
+  },
+  {
+    "code": "D32b",
+    "name": "도서(자료) 대출 건수",
+    "target": 8000,
+    "actual": 8690,
+    "rate": 109,
+    "flag": "달성"
+  },
+  {
+    "code": "D33a",
+    "name": "정보 서비스 품질 지수",
+    "target": 81.3,
+    "actual": 83.51,
+    "rate": 102.72,
+    "flag": "달성"
+  },
+  {
+    "code": "E21a",
+    "name": "대학 브랜드 인지도",
+    "target": 70,
+    "actual": 72.7,
+    "rate": 103.86,
+    "flag": "달성"
+  },
+  {
+    "code": "E21b",
+    "name": "대학 브랜드 이미지",
+    "target": 4.4,
+    "actual": 4,
+    "rate": 90.91,
+    "flag": "미달성"
+  },
+  {
+    "code": "E22a",
+    "name": "전문학사 신입생 충원율",
+    "target": 100,
+    "actual": 100,
+    "rate": 100,
+    "flag": "달성"
+  },
+  {
+    "code": "E22b",
+    "name": "전공심화과정 신입생 충원율",
+    "target": 97,
+    "actual": 88.3,
+    "rate": 91.03,
+    "flag": "미달성"
+  },
+  {
+    "code": "E22c",
+    "name": "전문기술석사과정 신입생 충원율",
+    "target": 100,
+    "actual": 0,
+    "rate": 0,
+    "flag": "미달성"
+  },
+  {
+    "code": "B11a",
+    "name": "학생지도 및 상담만족도",
+    "target": 81.5,
+    "actual": 80.8,
+    "rate": 99.1,
+    "flag": "미달성"
+  },
+  {
+    "code": "B11b",
+    "name": "중점지도군 지속재학률",
+    "target": 68.5,
+    "actual": 71.1,
+    "rate": 103.8,
+    "flag": "달성"
+  },
+  {
+    "code": "B12a",
+    "name": "Gem마일리지 획득지수",
+    "target": 87.2,
+    "actual": 91.6,
+    "rate": 105,
+    "flag": "달성"
+  },
+  {
+    "code": "B12b",
+    "name": "Gem인증률",
+    "target": 45,
+    "actual": 58.9,
+    "rate": 130.9,
+    "flag": "달성"
+  },
+  {
+    "code": "B12a",
+    "name": "Gem마일리지 획득지수",
+    "target": 87.2,
+    "actual": 91.6,
+    "rate": 105,
+    "flag": "달성"
+  },
+  {
+    "code": "B12b",
+    "name": "Gem인증률",
+    "target": 45,
+    "actual": 58.9,
+    "rate": 130.9,
+    "flag": "달성"
+  },
+  {
+    "code": "B21a",
+    "name": "취업률",
+    "target": 74,
+    "actual": 71.9,
+    "rate": 97.2,
+    "flag": "미달성"
+  },
+  {
+    "code": "B21b",
+    "name": "2차 유지취업률",
+    "target": 85.4,
+    "actual": 79.3,
+    "rate": 92.9,
+    "flag": "미달성"
+  },
+  {
+    "code": "B21a",
+    "name": "취업률",
+    "target": 74,
+    "actual": 71.9,
+    "rate": 97.2,
+    "flag": "미달성"
+  },
+  {
+    "code": "B21b",
+    "name": "2차 유지취업률",
+    "target": 85.4,
+    "actual": 79.3,
+    "rate": 92.9,
+    "flag": "미달성"
+  },
+  {
+    "code": "B31a",
+    "name": "장학금 지급률",
+    "target": 15.2,
+    "actual": 14.5,
+    "rate": 95.1,
+    "flag": "미달성"
+  },
+  {
+    "code": "B32a",
+    "name": "학생자치활동 만족도",
+    "target": 72,
+    "actual": 74.8,
+    "rate": 103.9,
+    "flag": "달성"
+  },
+  {
+    "code": "B34a",
+    "name": "장애학생 교육복지 지원률",
+    "target": 58,
+    "actual": 92.1,
+    "rate": 158.8,
+    "flag": "달성"
+  },
+  {
+    "code": "B33a",
+    "name": "생활관 연평균 수용률",
+    "target": 85,
+    "actual": 90.6,
+    "rate": 106.6,
+    "flag": "달성"
+  },
+  {
+    "code": "C11a",
+    "name": "지산학협력 활동",
+    "target": 542,
+    "actual": 1720,
+    "rate": 317.3,
+    "flag": "달성"
+  },
+  {
+    "code": "C13a",
+    "name": "지산학협력 인프라 고도화 지수",
+    "target": 26.2,
+    "actual": 187.2,
+    "rate": 714.5,
+    "flag": "달성"
+  },
+  {
+    "code": "C12a",
+    "name": "기업성장 지원 활동",
+    "target": 220,
+    "actual": 232,
+    "rate": 105.45,
+    "flag": "달성"
+  },
+  {
+    "code": "C21a",
+    "name": "캡스톤디자인 이수학생 비율",
+    "target": 43.7,
+    "actual": 63.5,
+    "rate": 145.3,
+    "flag": "달성"
+  },
+  {
+    "code": "C22a",
+    "name": "특화 교육과정 이수자수",
+    "target": 480,
+    "actual": 558,
+    "rate": 116.3,
+    "flag": "달성"
+  },
+  {
+    "code": "C23a",
+    "name": "표준현장실습 이수자",
+    "target": 449,
+    "actual": 455,
+    "rate": 101.3,
+    "flag": "달성"
+  },
+  {
+    "code": "C23b",
+    "name": "표준현장실습 만족도",
+    "target": 85.5,
+    "actual": 92.1,
+    "rate": 107.7,
+    "flag": "달성"
+  },
+  {
+    "code": "C24a",
+    "name": "창업활성화지수",
+    "target": 28.5,
+    "actual": 29.94,
+    "rate": 105.05,
+    "flag": "달성"
+  },
+  {
+    "code": "D21a",
+    "name": "해외취업지수",
+    "target": 83,
+    "actual": 75,
+    "rate": 90.4,
+    "flag": "미달성"
+  },
+  {
+    "code": "D22a",
+    "name": "다국적 글로벌 공유 확산건수",
+    "target": 9,
+    "actual": 27,
+    "rate": 300,
+    "flag": "달성"
+  },
+  {
+    "code": "D22b",
+    "name": "공인어학자격달성률",
+    "target": 87,
+    "actual": 82.2,
+    "rate": 94.5,
+    "flag": "미달성"
+  },
+  {
+    "code": "D23a",
+    "name": "한국어교육센터 연도별 재학 인원",
+    "target": 120,
+    "actual": 123,
+    "rate": 102.5,
+    "flag": "달성"
+  },
+  {
+    "code": "D23b",
+    "name": "외국인 유학생 정규과정 재학 인원",
+    "target": 40,
+    "actual": 79,
+    "rate": 197.5,
+    "flag": "달성"
+  }
+]

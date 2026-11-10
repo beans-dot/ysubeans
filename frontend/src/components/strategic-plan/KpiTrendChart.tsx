@@ -3,6 +3,7 @@
 import {
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Legend,
   Line,
@@ -21,13 +22,27 @@ import {
 } from '@/lib/strategic-plan/format';
 import type { SpKpi } from '@/lib/strategic-plan/types';
 
-const TARGET_COLOR = '#2563EB';
-const ACTUAL_COLOR = '#047857';
+const TARGET_COLOR = '#374151';
+const UP_COLOR = '#DC2626';
+const DOWN_COLOR = '#2563EB';
+const FLAT_COLOR = '#9CA3AF';
 
 interface TrendPoint {
   year: number;
   target: number | null;
   actual: number | null;
+  actualColor: string;
+}
+
+/** 직전 연도 달성값이 있을 때만 오르내림을 칠한다. */
+function actualBarColor(
+  actual: number | null,
+  previous: number | null,
+): string {
+  if (actual === null || previous === null) return FLAT_COLOR;
+  if (actual > previous) return UP_COLOR;
+  if (actual < previous) return DOWN_COLOR;
+  return FLAT_COLOR;
 }
 
 function withUnit(value: number | null, unit: string | null): string {
@@ -65,7 +80,7 @@ function TrendTooltip({
         <li className="flex items-center gap-2">
           <span
             className="inline-block h-2 w-3 shrink-0 rounded-sm"
-            style={{ background: ACTUAL_COLOR }}
+            style={{ background: point.actualColor }}
             aria-hidden
           />
           <span>달성값 {withUnit(point.actual, unit)}</span>
@@ -84,13 +99,19 @@ export function KpiTrendChart({
   kpi: SpKpi;
   years: number[];
 }) {
-  const data: TrendPoint[] = [...years]
-    .sort((a, b) => a - b)
-    .map((year) => ({
+  const orderedYears = [...years].sort((a, b) => a - b);
+  const data: TrendPoint[] = orderedYears.map((year, index) => {
+    const actual = kpi.results[year] ?? null;
+    const previousYear = index > 0 ? orderedYears[index - 1] : null;
+    const previous =
+      previousYear === null ? null : (kpi.results[previousYear] ?? null);
+    return {
       year,
       target: kpi.targets[year] ?? null,
-      actual: kpi.results[year] ?? null,
-    }));
+      actual,
+      actualColor: actualBarColor(actual, previous),
+    };
+  });
   const hasValue = data.some(
     (point) => point.target !== null || point.actual !== null,
   );
@@ -121,15 +142,25 @@ export function KpiTrendChart({
               <TrendTooltip unit={kpi.unit} inverse={inverse} />
             }
           />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Legend
+            wrapperStyle={{ fontSize: 12 }}
+            payload={[
+              { value: '목표값', type: 'line', color: TARGET_COLOR, id: 'target' },
+              { value: '상승', type: 'rect', color: UP_COLOR, id: 'up' },
+              { value: '하락', type: 'rect', color: DOWN_COLOR, id: 'down' },
+            ]}
+          />
           <Bar
             dataKey="actual"
             name="달성값"
-            fill={ACTUAL_COLOR}
             maxBarSize={28}
             radius={[2, 2, 0, 0]}
             isAnimationActive={false}
-          />
+          >
+            {data.map((point) => (
+              <Cell key={point.year} fill={point.actualColor} />
+            ))}
+          </Bar>
           <Line
             type="linear"
             dataKey="target"
