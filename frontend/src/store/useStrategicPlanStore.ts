@@ -81,17 +81,19 @@ export function budgetKey(
   return `${taskCode}::${subtaskCode}::${fundSourceId}`;
 }
 
-/** n년 3월 1일 ~ n+1년 2월 말일(윤달 포함) → n학년도 */
-export function currentAcademicYear(now = new Date()): number {
-  const year = now.getFullYear();
-  return now.getMonth() < 2 ? year - 1 : year;
+/**
+ * 예결산·자체평가·성과지표·결산·결과조회에 들어 있는 작성 데이터는
+ * 달력 연도 기준 직전 연도까지다. 2026년이면 2025년.
+ */
+export function previousDataYear(now = new Date()): number {
+  return now.getFullYear() - 1;
 }
 
 function defaultYear(years: number[]): number {
-  const current = currentAcademicYear();
-  if (years.length === 0) return current;
-  if (years.includes(current)) return current;
-  const past = years.filter((y) => y <= current);
+  const target = previousDataYear();
+  if (years.length === 0) return target;
+  if (years.includes(target)) return target;
+  const past = years.filter((y) => y <= target);
   return past.length > 0 ? Math.max(...past) : years[0];
 }
 
@@ -178,7 +180,7 @@ export const useStrategicPlanStore = create<StrategicPlanState>((set, get) => ({
   dept: '',
   query: '',
   specializedOnly: false,
-  year: currentAcademicYear(),
+  year: previousDataYear(),
   compareMode: 'jc',
   kpiSort: { key: '', dir: 1 },
 
