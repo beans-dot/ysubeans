@@ -3,7 +3,6 @@
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { FilterControls } from '@/components/dashboard/FilterControls';
 import { HybridChart } from '@/components/dashboard/HybridChart';
-import { DataMarkdownButton } from '@/components/dashboard/DataMarkdownButton';
 import { DescriptiveStatsPanel } from '@/components/dashboard/DescriptiveStatsPanel';
 import { PivotDataGrid } from '@/components/dashboard/PivotDataGrid';
 import { RelativeComparePanel } from '@/components/dashboard/RelativeComparePanel';
@@ -25,7 +24,6 @@ export default function DashboardPage() {
               <RelativeComparePanel />
               <PivotDataGrid />
               <DescriptiveStatsPanel />
-              <DataMarkdownButton />
             </div>
           </div>
         </div>

@@ -54,9 +54,8 @@ export function DataMarkdownButton() {
   };
 
   return (
-    <div className="flex justify-end">
+    <div className="flex justify-start">
       <Button
-        variant="outline"
         onClick={handleDownload}
         disabled={!hasData || busy}
         title={

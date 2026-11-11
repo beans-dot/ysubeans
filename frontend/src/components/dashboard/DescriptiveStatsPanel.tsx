@@ -2,9 +2,8 @@
 
 import { useMemo, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import type { PivotRow } from '@/lib/api';
+import type { PivotResult, PivotRow } from '@/lib/api';
 import { buildSeriesStyleMap } from '@/lib/chartStyleUtils';
 import {
   descriptiveStats,
@@ -13,8 +12,14 @@ import {
   type DescriptiveStats,
 } from '@/lib/descriptiveStats';
 import { logDataExport } from '@/lib/exportLog';
+import {
+  levelLabelForRow,
+  orderPivotRows,
+  type HierarchyExportTarget,
+} from '@/lib/hierarchyExport';
 import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
-import { Button } from '@/components/ui/button';
+import { DataMarkdownButton } from '@/components/dashboard/DataMarkdownButton';
+import { HierarchyExcelButton } from '@/components/dashboard/HierarchyExcelButton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import {
@@ -60,8 +65,16 @@ function statCells(stats: DescriptiveStats): string[] {
   ];
 }
 
+function exportSource(pathname: string, descendants: boolean) {
+  const base = pathname.includes('competitiveness')
+    ? 'competitiveness-descriptive'
+    : 'dashboard-descriptive';
+  return descendants ? `${base}-hierarchy` : base;
+}
+
 export function DescriptiveStatsPanel() {
   const pivot = useAnalysisStore((s) => s.pivot);
+  const selectedMetrics = useAnalysisStore((s) => s.selectedMetrics);
   const tableRef = useRef<HTMLTableElement>(null);
   const pathname = usePathname();
 
@@ -119,30 +132,63 @@ export function DescriptiveStatsPanel() {
     XLSX.writeFile(workbook, filename);
     logDataExport({
       format: 'xlsx',
-      source: pathname.includes('competitiveness')
-        ? 'competitiveness-descriptive'
-        : 'dashboard-descriptive',
+      source: exportSource(pathname, false),
       filename,
       summary: pivot
-        ? `기술통계 ${pivot.rows.length}행 · ${pivot.years.join(', ')}`
+        ? `기술통계 평균 ${pivot.rows.length}행 · ${pivot.years.join(', ')}`
         : undefined,
     });
   };
 
+  const handleDescendants = (result: {
+    pivot: PivotResult;
+    targets: HierarchyExportTarget[];
+  }) => {
+    const metricIds = selectedMetrics.map((metric) => metric.metricId);
+    const ordered = orderPivotRows(result.pivot.rows, result.targets, metricIds);
+    const years = result.pivot.years;
+    const sheet: Array<Array<string | number>> = [
+      ['위계', '데이터명', ...STAT_HEADERS],
+      ...ordered.map((row) => {
+        const unit = row.metricUnit?.trim();
+        const name = `${row.targetLabel} · ${row.metricName}`;
+        return [
+          levelLabelForRow(row, result.targets),
+          unit ? `${name} (${unit})` : name,
+          ...statCells(descriptiveStats(years.map((year) => row.values[year]))),
+        ];
+      }),
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(sheet);
+    worksheet['!cols'] = [
+      { wch: 12 },
+      { wch: 42 },
+      ...STAT_HEADERS.map(() => ({ wch: 18 })),
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '하위위계');
+    const filename = `ysu-ir-descriptive-hierarchy-${Date.now()}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+    logDataExport({
+      format: 'xlsx',
+      source: exportSource(pathname, true),
+      filename,
+      summary: `기술통계 하위위계 ${ordered.length}행 · ${years.join(', ')}`,
+    });
+  };
+
   return (
+    <div>
     <Card>
       <CardHeader className="space-y-2">
         <div className="flex flex-row items-center justify-between gap-3">
           <CardTitle>기초 기술 통계 데이터</CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
+          <HierarchyExcelButton
             className="shrink-0"
-            onClick={handleExcel}
             disabled={!hasData}
-          >
-            <FileSpreadsheet className="mr-1 h-4 w-4" /> 엑셀 다운로드
-          </Button>
+            onAverage={handleExcel}
+            onDescendants={handleDescendants}
+          />
         </div>
         {hasData && (
           <CardDescription>
@@ -230,5 +276,9 @@ export function DescriptiveStatsPanel() {
         {ghost ? <CorrDragGhost drag={ghost} /> : null}
       </CardContent>
     </Card>
+      <div className="mt-2">
+        <DataMarkdownButton />
+      </div>
+    </div>
   );
 }

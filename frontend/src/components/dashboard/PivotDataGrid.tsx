@@ -2,16 +2,29 @@
 
 import { useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatNumber } from '@/lib/dataFormatters';
 import { logDataExport } from '@/lib/exportLog';
+import {
+  levelLabelForRow,
+  orderPivotRows,
+  type HierarchyExportTarget,
+} from '@/lib/hierarchyExport';
+import type { PivotResult } from '@/lib/api';
 import { useAnalysisStore } from '@/store/AnalysisStoreProvider';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { HierarchyExcelButton } from './HierarchyExcelButton';
+
+function exportSource(pathname: string, descendants: boolean) {
+  const base = pathname.includes('competitiveness')
+    ? 'competitiveness-pivot'
+    : 'dashboard-pivot';
+  return descendants ? `${base}-hierarchy` : base;
+}
 
 export function PivotDataGrid() {
   const pivot = useAnalysisStore((s) => s.pivot);
+  const selectedMetrics = useAnalysisStore((s) => s.selectedMetrics);
   const tableRef = useRef<HTMLTableElement>(null);
   const pathname = usePathname();
 
@@ -27,13 +40,50 @@ export function PivotDataGrid() {
     XLSX.writeFile(workbook, filename);
     logDataExport({
       format: 'xlsx',
-      source: pathname.includes('competitiveness')
-        ? 'competitiveness-pivot'
-        : 'dashboard-pivot',
+      source: exportSource(pathname, false),
       filename,
       summary: pivot
-        ? `피벗 ${pivot.rows.length}행 · ${pivot.years.join(', ')}`
+        ? `피벗 평균 ${pivot.rows.length}행 · ${pivot.years.join(', ')}`
         : undefined,
+    });
+  };
+
+  const handleDescendants = (
+    result: { pivot: PivotResult; targets: HierarchyExportTarget[] },
+  ) => {
+    const metricIds = selectedMetrics.map((metric) => metric.metricId);
+    const ordered = orderPivotRows(result.pivot.rows, result.targets, metricIds);
+    const years = result.pivot.years;
+    const rows: Array<Array<string | number>> = [
+      ['위계', '대상', '지표', '단위', ...years.map(String)],
+      ...ordered.map((row) => [
+        levelLabelForRow(row, result.targets),
+        row.targetLabel,
+        row.metricName,
+        row.metricUnit ?? '-',
+        ...years.map((year) => {
+          const value = row.values[year];
+          return value === null || value === undefined ? '' : value;
+        }),
+      ]),
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    worksheet['!cols'] = [
+      { wch: 12 },
+      { wch: 36 },
+      { wch: 28 },
+      { wch: 10 },
+      ...years.map(() => ({ wch: 12 })),
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '하위위계');
+    const filename = `ysu-ir-pivot-hierarchy-${Date.now()}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+    logDataExport({
+      format: 'xlsx',
+      source: exportSource(pathname, true),
+      filename,
+      summary: `피벗 하위위계 ${ordered.length}행 · ${years.join(', ')}`,
     });
   };
 
@@ -41,14 +91,11 @@ export function PivotDataGrid() {
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>피벗 데이터</CardTitle>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExcel}
+        <HierarchyExcelButton
           disabled={!hasData}
-        >
-          <FileSpreadsheet className="mr-1 h-4 w-4" /> 엑셀 다운로드
-        </Button>
+          onAverage={handleExcel}
+          onDescendants={handleDescendants}
+        />
       </CardHeader>
       <CardContent>
         {!hasData ? (
